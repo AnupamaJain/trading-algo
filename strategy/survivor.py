@@ -99,35 +99,22 @@ class SurvivorStrategy:
         logger.info(f"Strike difference for {self.symbol_initials} is {self.strike_difference}")
 
     def _nifty_quote(self):
-        symbol_code = "NSE:NIFTY 50"
-        return self.broker.get_quote(symbol_code)
+        return self.broker.get_quote(self.strat_var_index_symbol)
 
     def _initialize_state(self):
-
-        # Initialize reset flags - these track when reset conditions are triggered
-        self.pe_reset_gap_flag = 0  # Set to 1 when PE trade is executed
-        self.ce_reset_gap_flag = 0  # Set to 1 when CE trade is executed
-        
-        # Get current market data for initialization
+        self.pe_reset_gap_flag = 0
+        self.ce_reset_gap_flag = 0
         current_quote = self._nifty_quote()
-        print(current_quote)  # Debug output
-        
-        # Initialize PE reference value
+        last_price = current_quote["last_price"]
+
         if self.strat_var_pe_start_point == 0:
-            # Use current market price as starting reference
-            self.nifty_pe_last_value = current_quote[self.strat_var_index_symbol]['last_price']
-            logger.debug(f"Nifty PE Start Point is 0, so using LTP: {self.nifty_pe_last_value}")
+            self.nifty_pe_last_value = last_price
         else:
-            # Use configured starting point
             self.nifty_pe_last_value = self.strat_var_pe_start_point
 
-        # Initialize CE reference value
         if self.strat_var_ce_start_point == 0:
-            # Use current market price as starting reference
-            self.nifty_ce_last_value = current_quote[self.strat_var_index_symbol]['last_price']
-            logger.debug(f"Nifty CE Start Point is 0, so using LTP: {self.nifty_ce_last_value}")
+            self.nifty_ce_last_value = last_price
         else:
-            # Use configured starting point
             self.nifty_ce_last_value = self.strat_var_ce_start_point
             
         logger.info(f"Nifty PE Start Value during initialization: {self.nifty_pe_last_value}, "
@@ -169,7 +156,7 @@ class SurvivorStrategy:
         
         Called externally by the main trading loop when new market data arrives
         """
-        current_price = ticks['last_price']
+        current_price = ticks["last_price"]
         
         # Process trading opportunities for both sides
         self._handle_pe_trade(current_price)  # Handle Put option opportunities
@@ -253,12 +240,13 @@ class SurvivorStrategy:
                     return 
                 
                 # Get current quote for the selected instrument
-                symbol_code = self.strat_var_exchange + ":" + instrument['tradingsymbol']
-                quote = self.broker.get_quote(symbol_code)[symbol_code]
-                
+                symbol_code = f"{self.strat_var_exchange}:{instrument['tradingsymbol']}"
+                quote = self.broker.get_quote(symbol_code)
                 # Check if premium meets minimum threshold
-                if quote['last_price'] < self.strat_var_min_price_to_sell:
-                    logger.info(f"Last price {quote['last_price']} is less than min price to sell {self.strat_var_min_price_to_sell}")
+                if quote["last_price"] < self.strat_var_min_price_to_sell:
+                    logger.info(
+                        f"Last price {quote['last_price']} is less than min price to sell {self.strat_var_min_price_to_sell}"
+                    )
                     # Try closer strike if premium is too low
                     temp_gap -= self.strat_var_nifty_lot_size
                     continue
@@ -327,13 +315,13 @@ class SurvivorStrategy:
                     return
                     
                 # Get current quote for the selected instrument
-                symbol_code = self.strat_var_exchange + ":" + instrument['tradingsymbol']
-                quote = self.broker.get_quote(symbol_code)[symbol_code]
-                print("=======", quote)
-                
+                symbol_code = f"{self.strat_var_exchange}:{instrument['tradingsymbol']}"
+                quote = self.broker.get_quote(symbol_code)
                 # Check if premium meets minimum threshold
-                if quote['last_price'] < self.strat_var_min_price_to_sell:
-                    logger.info(f"Last price {quote['last_price']} is less than min price to sell {self.strat_var_min_price_to_sell}, trying next strike")
+                if quote["last_price"] < self.strat_var_min_price_to_sell:
+                    logger.info(
+                        f"Last price {quote['last_price']} is less than min price to sell {self.strat_var_min_price_to_sell}, trying next strike"
+                    )
                     # Try closer strike if premium is too low
                     temp_gap -= self.strat_var_nifty_lot_size
                     continue
@@ -513,15 +501,15 @@ class SurvivorStrategy:
         """
         # Place order through broker interface
         order_id = self.broker.place_order(
-            symbol, 
-            quantity, 
+            symbol,
+            quantity,
             price=None,  # Market order
-            transaction_type=self.strat_var_trans_type, 
-            order_type=self.strat_var_order_type, 
-            variety="REGULAR", 
-            exchange=self.strat_var_exchange, 
-            product=self.strat_var_product_type, 
-            tag="Survivor"
+            transaction_type=self.strat_var_trans_type,
+            order_type=self.strat_var_order_type,
+            product=self.strat_var_product_type,
+            variety="REGULAR",  # variety is not used by fyers
+            exchange=self.strat_var_exchange,  # exchange is not used by fyers
+            tag="Survivor",
         )
         
         # Handle order placement failure
@@ -617,6 +605,7 @@ if __name__ == "__main__":
     from orders import OrderTracker
     from strategy.survivor import SurvivorStrategy
     from brokers.zerodha import ZerodhaBroker
+    from brokers.fyers import FyersBroker
     from logger import logger
     from queue import Queue
     import random
@@ -1050,12 +1039,22 @@ PARAMETER GROUPS:
     
     
     # Create broker interface for market data and order execution
-    if os.getenv("BROKER_TOTP_ENABLE") == "true":
-        logger.info("Using TOTP login flow")
-        broker = ZerodhaBroker(without_totp=False)
+    broker_name = os.getenv("BROKER_NAME", "zerodha").lower()
+
+    if broker_name == "zerodha":
+        if os.getenv("BROKER_TOTP_ENABLE") == "true":
+            logger.info("Using Zerodha with TOTP login flow")
+            broker = ZerodhaBroker(without_totp=False)
+        else:
+            logger.info("Using Zerodha with normal login flow")
+            broker = ZerodhaBroker(without_totp=True)
+    elif broker_name == "fyers":
+        logger.info("Using Fyers broker")
+        broker = FyersBroker(symbols=[config["index_symbol"]])
+        broker.download_instruments()
     else:
-        logger.info("Using normal login flow")
-        broker = ZerodhaBroker(without_totp=True)
+        logger.error(f"Unsupported broker: {broker_name}")
+        sys.exit(1)
     
     # Create order tracking system for position management
     order_tracker = OrderTracker() 
@@ -1063,11 +1062,13 @@ PARAMETER GROUPS:
     # Get instrument token for the underlying index
     # This token is used for websocket subscription to receive real-time price updates
     try:
-        quote_data = broker.get_quote(config['index_symbol'])
-        instrument_token = quote_data[config['index_symbol']]['instrument_token']
+        quote_data = broker.get_quote(config["index_symbol"])
+        instrument_token = quote_data["instrument_token"]
         logger.info(f"✓ Index instrument token obtained: {instrument_token}")
     except Exception as e:
-        logger.error(f"Failed to get instrument token for {config['index_symbol']}: {e}")
+        logger.error(
+            f"Failed to get instrument token for {config['index_symbol']}: {e}"
+        )
         sys.exit(1)
 
     # Initialize data dispatcher for handling real-time market data
@@ -1108,7 +1109,6 @@ PARAMETER GROUPS:
     # ==========================================================================
     # SECTION 6: STRATEGY INITIALIZATION AND WEBSOCKET START
     # ==========================================================================
-    
     # Start websocket connection for real-time data
     broker.connect_websocket()
 
