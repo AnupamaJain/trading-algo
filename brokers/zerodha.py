@@ -10,6 +10,7 @@ from brokers.base import BrokerBase
 from kiteconnect import KiteConnect, KiteTicker
 import pandas as pd
 from threading import Thread
+import datetime
 
 from logger import logger
 
@@ -100,6 +101,14 @@ class ZerodhaBroker(BrokerBase):
             }
         return None
 
+    def get_history(self, symbol, resolution, start_date, end_date, oi_flag):
+        instrument_token = self.symbol_to_token.get(symbol)
+        from_date = datetime.datetime.strptime(start_date, "%Y-%m-%d")
+        to_date = datetime.datetime.strptime(end_date, "%Y-%m-%d")
+        return self.kite.historical_data(
+            instrument_token, from_date, to_date, resolution, oi=oi_flag
+        )
+
     def place_gtt_order(self, symbol, quantity, price, transaction_type, order_type, exchange, product, tag="Unknown"):
         if order_type not in ["LIMIT", "MARKET"]:
             raise ValueError(f"Invalid order type: {order_type}")
@@ -121,7 +130,7 @@ class ZerodhaBroker(BrokerBase):
         order_id = self.kite.place_gtt(trigger_type=self.kite.GTT_TYPE_SINGLE, tradingsymbol=symbol, exchange=exchange, trigger_values=[price], last_price=last_price, orders=order_obj)
         return order_id['trigger_id']
     
-    def place_order(self, symbol, quantity, price, transaction_type, order_type, variety, exchange, product, tag="Unknown"):
+    def place_order(self, symbol, quantity, price, transaction_type, order_type, product, **kwargs):
         if order_type == "LIMIT":
             order_type = self.kite.ORDER_TYPE_LIMIT
         elif order_type == "MARKET":
@@ -136,12 +145,15 @@ class ZerodhaBroker(BrokerBase):
         else:
             raise ValueError(f"Invalid transaction type: {transaction_type}")
         
+        variety = kwargs.get("variety", "REGULAR")
         if variety == "REGULAR":
             variety = self.kite.VARIETY_REGULAR
         else:
             raise ValueError(f"Invalid variety: {variety}")
         
-        logger.info(f"Placing order for {symbol} with quantity {quantity} at {price} with order type {order_type} and transaction type {transaction_type}, variety {variety}, exchange {exchange}, product {product}, tag {tag}")
+        tag = kwargs.get("tag", "Unknown")
+        exchange = kwargs.get("exchange", "NFO")
+        logger.info(f"Placing order for {symbol} with quantity {quantity} at {price} with order type {order_type} and transaction type {transaction_type}, variety {variety}, product {product}, tag {tag}")
         order_attempt = 0
         try:
             while order_attempt < 5:
@@ -164,11 +176,6 @@ class ZerodhaBroker(BrokerBase):
             logger.error(f"Order placement failed: {e}")
             return -1
     
-    def get_quote(self, symbol):
-        return self.kite.quote(symbol)
-    
-    def get_historical_data(self, instrument_token, from_date, to_date, interval, oi=False):
-        return self.kite.historical_data(instrument_token, from_date, to_date, interval, oi=oi)
 
     def get_positions(self):
         return self.kite.positions()
@@ -250,6 +257,9 @@ class ZerodhaBroker(BrokerBase):
     def download_instruments(self):
         instruments = self.kite.instruments()
         self.instruments_df = pd.DataFrame(instruments)
+        self.symbol_to_token = dict(
+            zip(self.instruments_df.tradingsymbol, self.instruments_df.instrument_token)
+        )
     
     def get_instruments(self):
         return self.instruments_df
