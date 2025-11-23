@@ -650,20 +650,35 @@ class FyersBroker(BrokerBase):
         ]
         self.instruments_df = df
         self.symbol_to_token = dict(
-            zip(df.tradingsymbol, df.exchange_feed)
+            zip(df.symbol_ticker, df.exchange_feed)
         )  # Assuming exchange_feed is the token
 
     def get_instruments(self):
         return self.instruments_df
+
+    @fyers_rate_limit
+    def get_history(
+        self, symbol: str, resolution: str, start_date: str, end_date: str, oi_flag: bool = False
+    ):
+        return self.fyers_model.history(
+            symbol=symbol,
+            resolution=resolution,
+            date_format="1",
+            range_from=start_date,
+            range_to=end_date,
+            cont_flag="1",
+            oi_flag=str(int(oi_flag)),
+        )
 
     def get_quote(self, symbol):
         if ":" not in symbol:
             symbol = "NSE:" + symbol
         data = {"symbols": symbol}
         quotes = self.get_quotes(data)
+        token = self.symbol_to_token.get(symbol)
         return {
             "last_price": quotes["d"][0]["v"]["lp"],
-            "instrument_token": quotes["d"][0]["v"]["instrument_token"],
+            "instrument_token": token,
         }
 
     @fyers_rate_limit
