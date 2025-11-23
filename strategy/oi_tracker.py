@@ -60,17 +60,14 @@ class OITrackerStrategy:
             ]
         # Filter for the specific option series
         self.option_series_instruments = self.nfo_instruments[
-            self.nfo_instruments['tradingsymbol'].str.startswith(self.strat_var_
-symbol_initials)
+            self.nfo_instruments['tradingsymbol'].str.startswith(self.strat_var_symbol_initials)
         ]
 
         if self.option_series_instruments.empty:
-            logger.error(f"No instruments found for symbol prefix: {self.strat_v
-ar_symbol_initials}")
+            logger.error(f"No instruments found for symbol prefix: {self.strat_var_symbol_initials}")
             sys.exit(1)
 
-        logger.info(f"Successfully loaded {len(self.option_series_instruments)}
-instruments for {self.strat_var_symbol_initials}")
+        logger.info(f"Successfully loaded {len(self.option_series_instruments)} instruments for {self.strat_var_symbol_initials}")
 
         self.instrument_data = {}
 
@@ -106,9 +103,10 @@ instruments for {self.strat_var_symbol_initials}")
         if atm_strike is None:
             return [], []
 
-        strikes_to_find = [atm_strike + i * self.strat_var_nifty_strike_differen
-ce for i in range(-self.strat_var_strike_count, self.strat_var_strike_count + 1)
-]
+        strikes_to_find = [
+            atm_strike + i * self.strat_var_nifty_strike_difference
+            for i in range(-self.strat_var_strike_count, self.strat_var_strike_count + 1)
+        ]
 
         call_options = []
         put_options = []
@@ -141,8 +139,7 @@ ce for i in range(-self.strat_var_strike_count, self.strat_var_strike_count + 1)
         Fetches and updates historical data for the given instruments.
         """
         to_date = datetime.datetime.now()
-        from_date = to_date - datetime.timedelta(hours=3, minutes=30) # A bit of
- buffer
+        from_date = to_date - datetime.timedelta(hours=3, minutes=30)  # A bit of buffer
 
         for instrument in instruments_to_update:
             token = instrument['instrument_token']
@@ -171,12 +168,10 @@ ce for i in range(-self.strat_var_strike_count, self.strat_var_strike_count + 1)
                     self.instrument_data[token] = adapted_records
                 else:
                     self.instrument_data[token] = records
-                logger.info(f"Updated historical data for {instrument['tradingsy
-mbol']} ({len(records)} records)")
+                logger.info(f"Updated historical data for {instrument['tradingsymbol']} ({len(records)} records)")
             except Exception as e:
-                logger.error(f"Failed to fetch historical data for {instrument['
-tradingsymbol']}: {e}")
-                self.instrument_data[token] = [] # Store empty list on failure
+                logger.error(f"Failed to fetch historical data for {instrument['tradingsymbol']}: {e}")
+                self.instrument_data[token] = []  # Store empty list on failure
 
     def _calculate_change(self, token, minutes_ago, data_key='oi'):
         """
@@ -193,8 +188,7 @@ tradingsymbol']}: {e}")
         current_record = history[0]
         current_value = current_record[data_key]
 
-        target_time = current_record['date'] - datetime.timedelta(minutes=minute
-s_ago)
+        target_time = current_record['date'] - datetime.timedelta(minutes=minutes_ago)
 
         # Find the closest record to the target time
         past_record = min(history, key=lambda x: abs(x['date'] - target_time))
@@ -219,8 +213,7 @@ s_ago)
         Generates a table for call or put options.
         Returns the table and the count of red cells.
         """
-        table = Table(title=title, show_header=True, header_style="bold magenta"
-)
+        table = Table(title=title, show_header=True, header_style="bold magenta")
         table.add_column("Strike", style="dim", width=12)
         table.add_column("Current OI", justify="right")
         table.add_column("3min Δ", justify="right")
@@ -230,8 +223,7 @@ s_ago)
         table.add_column("30min Δ", justify="right")
         table.add_column("3hr Δ", justify="right")
 
-        time_intervals = {'3min': 3, '5min': 5, '10min': 10, '15min': 15, '30min
-': 30, '3hr': 180}
+        time_intervals = {'3min': 3, '5min': 5, '10min': 10, '15min': 15, '30min': 30, '3hr': 180}
         red_cell_count = 0
         total_data_cells = 0
 
@@ -240,26 +232,22 @@ s_ago)
             history = self.instrument_data.get(token, [])
             current_oi = history[0]['oi'] if history else 0
 
-            strike_style = "bold yellow" if option['strike'] == atm_strike else
-""
+            strike_style = "bold yellow" if option['strike'] == atm_strike else ""
             row_data = [f"[{strike_style}]{option['strike']}[/{strike_style}]"]
             row_data.append(f"{current_oi:,}")
 
             for key, minutes in time_intervals.items():
                 total_data_cells += 1
-                abs_change, perc_change = self._calculate_change(token, minutes,
- 'oi')
+                abs_change, perc_change = self._calculate_change(token, minutes, 'oi')
 
                 # Determine style based on threshold
-                threshold = self.strat_var_color_thresholds.get(key.replace('min
-', 'm').replace('hr', 'h'), 1000)
+                threshold = self.strat_var_color_thresholds.get(key.replace('min', 'm').replace('hr', 'h'), 1000)
                 style = ""
                 if perc_change > threshold:
                     style = "red"
                     red_cell_count += 1
 
-                cell_content = f"[{style}]{perc_change:+.1f}% ({abs_change:,})[/
-{style}]"
+                cell_content = f"[{style}]{perc_change:+.1f}% ({abs_change:,})[/{style}]"
                 row_data.append(cell_content)
 
             table.add_row(*row_data)
@@ -277,14 +265,12 @@ s_ago)
         table.add_column("30min Δ", justify="right")
         table.add_column("3hr Δ", justify="right")
 
-        time_intervals = {'3min': 3, '5min': 5, '10min': 10, '15min': 15, '30min
-': 30, '3hr': 180}
+        time_intervals = {'3min': 3, '5min': 5, '10min': 10, '15min': 15, '30min': 30, '3hr': 180}
 
         row_data = [f"{ltp:,.2f}"]
 
         for key, minutes in time_intervals.items():
-            abs_change, perc_change = self._calculate_change(token, minutes, 'cl
-ose')
+            abs_change, perc_change = self._calculate_change(token, minutes, 'close')
             cell_content = f"{perc_change:+.2f}% ({abs_change:,.2f})"
             row_data.append(cell_content)
 
@@ -302,39 +288,30 @@ ose')
                     atm_strike = self._get_atm_strike(ltp)
 
                     if not ltp or not atm_strike or not nifty_token:
-                        live.update("[bold red]Could not fetch NIFTY LTP. Retryi
-ng...[/bold red]")
+                        live.update("[bold red]Could not fetch NIFTY LTP. Retrying...[/bold red]")
                         time.sleep(self.strat_var_update_interval_seconds)
                         continue
 
-                    call_options, put_options = self._get_option_details(atm_str
-ike)
+                    call_options, put_options = self._get_option_details(atm_strike)
 
-                    nifty_instrument = [{'instrument_token': nifty_token, 'tradi
-ngsymbol': 'NIFTY 50'}]
-                    all_instruments = nifty_instrument + call_options + put_opti
-ons
+                    nifty_instrument = [{'instrument_token': nifty_token, 'tradingsymbol': 'NIFTY 50'}]
+                    all_instruments = nifty_instrument + call_options + put_options
 
                     self._update_historical_data(all_instruments)
 
                     # Generate tables
-                    calls_table, red_calls, total_calls = self._generate_options
-_table("CALLS", call_options, atm_strike)
-                    puts_table, red_puts, total_puts = self._generate_options_ta
-ble("PUTS", put_options, atm_strike)
+                    calls_table, red_calls, total_calls = self._generate_options_table("CALLS", call_options, atm_strike)
+                    puts_table, red_puts, total_puts = self._generate_options_table("PUTS", put_options, atm_strike)
                     nifty_table = self._generate_nifty_table(ltp, nifty_token)
 
                     # Check for alerts
                     total_red_cells = red_calls + red_puts
                     total_data_cells = total_calls + total_puts
                     if total_data_cells > 0:
-                        red_percentage = (total_red_cells / total_data_cells) *
-100
-                        if red_percentage > self.strat_var_alert_threshold_perce
-ntage:
+                        red_percentage = (total_red_cells / total_data_cells) * 100
+                        if red_percentage > self.strat_var_alert_threshold_percentage:
                             beepy.beep(sound='ping')
-                            logger.warning(f"ALERT: Red cell percentage ({red_pe
-rcentage:.1f}%) exceeded threshold.")
+                            logger.warning(f"ALERT: Red cell percentage ({red_percentage:.1f}%) exceeded threshold.")
 
                     # Group tables for display
                     from rich.panel import Panel
@@ -348,13 +325,10 @@ rcentage:.1f}%) exceeded threshold.")
                         Layout(size=3, name="footer")
                     )
 
-                    header_text = Align.center(f"NIFTY @ {ltp:,.2f} (ATM: {atm_s
-trike}) | Last updated: {datetime.datetime.now().strftime('%H:%M:%S')}", vertica
-l="middle")
+                    header_text = Align.center(f"NIFTY @ {ltp:,.2f} (ATM: {atm_strike}) | Last updated: {datetime.datetime.now().strftime('%H:%M:%S')}", vertical="middle")
                     layout["header"].update(header_text)
 
-                    layout["main"].split_row(Layout(name="left"), Layout(name="r
-ight"))
+                    layout["main"].split_row(Layout(name="left"), Layout(name="right"))
                     layout["left"].update(calls_table)
                     layout["right"].update(puts_table)
 
@@ -375,8 +349,7 @@ ight"))
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="OI Tracker Strategy")
-    parser.add_argument('--config', type=str, default='strategy/configs/oi_track
-er.yml', help='Path to the configuration file.')
+    parser.add_argument('--config', type=str, default='strategy/configs/oi_tracker.yml', help='Path to the configuration file.')
     args = parser.parse_args()
 
     try:
