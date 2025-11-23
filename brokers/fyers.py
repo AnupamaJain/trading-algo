@@ -14,6 +14,7 @@ import hashlib
 from fyers_apiv3 import fyersModel
 from fyers_apiv3.FyersWebsocket import data_ws
 from ratelimit import limits, sleep_and_retry
+import pandas as pd
 import functools
 from typing import Dict, List, Optional, Any, Tuple
 
@@ -73,7 +74,6 @@ class FyersBroker(BrokerBase):
         litemode=False,
         write_to_file=False,
         reconnect=True,
-        data_handler=None,
     ):
         # Authenticate and initialize REST model
         logger.info("Initializing FyersBroker...")
@@ -93,7 +93,8 @@ class FyersBroker(BrokerBase):
         self.litemode = litemode
         self.write_to_file = write_to_file
         self.reconnect = reconnect
-        self.data_handler = data_handler
+        self.on_ticks = None
+        self.on_connect = None
         self.ws = None  # Placeholder for the WebSocket instance
 
         # === Begin Benchmark Tracking Changes ===
@@ -394,22 +395,6 @@ class FyersBroker(BrokerBase):
         result = self.fyers_model.optionchain(data)
         self.update_context()
         return result
-    
-
-    @fyers_rate_limit
-    def get_quotes(self, data: dict):
-        """
-        Retrieve current quotes via REST.
-
-        Args:
-            data (dict): Parameters for quote data.
-
-        Returns:
-            dict: Quotes data response.
-        """
-        result = self.fyers_model.quotes(data)
-        self.update_context()
-        return result
 
     @fyers_rate_limit
     def get_margin(self, symbols: list, use_curl=True):
@@ -529,6 +514,21 @@ class FyersBroker(BrokerBase):
             return {"error": str(e)}
 
     @fyers_rate_limit
+    def get_quotes(self, data: dict):
+        """
+        Retrieve current quotes via REST.
+
+        Args:
+            data (dict): Parameters for quote data.
+
+        Returns:
+            dict: Quotes data response.
+        """
+        result = self.fyers_model.quotes(data)
+        self.update_context()
+        return result
+
+    @fyers_rate_limit
     def get_multiorder_margin(self, order_data, use_curl=False):
         """
         Calculate margin required for a list of order bodies using Fyers Multiorder Margin API.
@@ -587,19 +587,20 @@ class FyersBroker(BrokerBase):
         """
         Internal callback for handling WebSocket messages.
         """
-        # Process the message; if a data handler is provided, pass the data.
-        print(message)
-        if "symbol" in message:
-            if self._benchmark:
-                with self.benchmark_lock:
-                    self.ticker_second_counts[message["symbol"]] = (
-                        self.ticker_second_counts.get(message["symbol"], 0) + 1
-                    )
-            if self.data_handler:
-                self.data_handler.data_queue.put(message)
-            else:
-                # print(message)
-                pass
+        # Standardize the tick data to match Zerodha's format
+        if isinstance(message, list) and len(message) > 0 and "ltp" in message[0]:
+            symbol = message[0].get("symbol")
+            token = self.symbol_to_token.get(symbol)
+            standardized_tick = {
+                "instrument_token": token,
+                "last_price": message[0].get("ltp"),
+                # Add other relevant fields here
+            }
+            if self.on_ticks:
+                self.on_ticks(self.ws, [standardized_tick])
+        else:
+            # Handle other message types if necessary
+            logger.debug(f"Received non-tick message: {message}")
 
     def _on_ws_close(self, message):
         """
@@ -614,3 +615,88 @@ class FyersBroker(BrokerBase):
         print("WebSocket connection opened. Subscribing to symbols.")
         self.ws.subscribe(symbols=self.symbols, data_type=self.data_type)
         self.ws.keep_running()
+        if self.on_connect:
+            self.on_connect(self.ws, "Connection opened")
+
+    def download_instruments(self):
+        # Define the URLs for different exchanges
+        urls = {
+            "NSE_CAPITAL_URL": "https://public.fyers.in/sym_details/NSE_CM.csv",
+            "NSE_FNO_URL": "https://public.fyers.in/sym_details/NSE_FO.csv",
+            "NSE_CURRENCY_URL": "https://public.fyers.in/sym_details/NSE_CD.csv",
+        }
+        # Create an empty list to store DataFrames
+        dfs = []
+        # Loop through the URLs and read the CSVs into pandas DataFrames
+        for exchange, url in urls.items():
+            dfs.append(pd.read_csv(url, header=None))
+        # Concatenate the DataFrames into a single DataFrame
+        df = pd.concat(dfs)
+        # Define the column names
+        df.columns = [
+            "exchange_feed",
+            "lot_size",
+            "symbol_ticker",
+            "instrument_type",
+            "strike",
+            "option_type",
+            "unknown_param_1",
+            "unknown_param_2",
+            "unknown_param_3",
+            "tradingsymbol",
+            "unknown_param_4",
+            "unknown_param_5",
+            "unknown_param_6",
+        ]
+        self.instruments_df = df
+        self.symbol_to_token = dict(
+            zip(df.tradingsymbol, df.exchange_feed)
+        )  # Assuming exchange_feed is the token
+
+    def get_instruments(self):
+        return self.instruments_df
+
+    def get_quote(self, symbol):
+        if ":" not in symbol:
+            symbol = "NSE:" + symbol
+        data = {"symbols": symbol}
+        quotes = self.get_quotes(data)
+        return {
+            "last_price": quotes["d"][0]["v"]["lp"],
+            "instrument_token": quotes["d"][0]["v"]["instrument_token"],
+        }
+
+    @fyers_rate_limit
+    def place_order(
+        self,
+        symbol,
+        quantity,
+        price,
+        transaction_type,
+        order_type,
+        product,
+        **kwargs,
+    ):
+        side_map = {"BUY": 1, "SELL": -1}
+        type_map = {"MARKET": 2, "LIMIT": 1}
+        product_map = {"NRML": "MARGIN", "MIS": "INTRADAY", "CNC": "CNC"}
+
+        data = {
+            "symbol": symbol,
+            "qty": int(quantity),
+            "type": type_map.get(order_type, 2),
+            "side": side_map.get(transaction_type, -1),
+            "productType": product_map.get(product, "INTRADAY"),
+            "limitPrice": float(price) if order_type == "LIMIT" else 0.0,
+            "stopPrice": 0.0,
+            "validity": "DAY",
+            "disclosedQty": 0,
+            "offlineOrder": False,
+            "orderTag": kwargs.get("tag"),
+        }
+        response = self.fyers_model.place_order(data=data)
+        if response.get("s") == "ok":
+            return response.get("id")
+        else:
+            logger.error(f"Fyers order placement failed: {response.get('message')}")
+            return -1

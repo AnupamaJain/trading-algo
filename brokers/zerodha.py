@@ -87,12 +87,19 @@ class ZerodhaBroker(BrokerBase):
     
     def get_orders(self):
         return self.kite.orders()
-    
-    def get_quote(self, symbol, exchange):
-        if ":" not in symbol:   
-            symbol = exchange + ":" + symbol
-        return self.kite.quote(symbol)
-    
+
+    def get_quote(self, symbol):
+        if ":" not in symbol:
+            symbol = "NSE:" + symbol  # Assuming NSE for simplicity
+        zerodha_quote = self.kite.quote(symbol)
+        quote_data = zerodha_quote.get(symbol)
+        if quote_data:
+            return {
+                "last_price": quote_data["last_price"],
+                "instrument_token": quote_data["instrument_token"],
+            }
+        return None
+
     def place_gtt_order(self, symbol, quantity, price, transaction_type, order_type, exchange, product, tag="Unknown"):
         if order_type not in ["LIMIT", "MARKET"]:
             raise ValueError(f"Invalid order type: {order_type}")
