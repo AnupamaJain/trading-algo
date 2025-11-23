@@ -87,7 +87,7 @@ class FyersBroker(BrokerBase):
         self._init_context()
 
         # WebSocket parameters
-        self.symbols = symbols or ["NSE:SBIN-EQ", "NSE:ADANIENT-EQ"]
+        self.symbols = symbols if symbols is not None else []
         self.data_type = data_type
         self.log_path = log_path
         self.litemode = litemode
@@ -588,16 +588,21 @@ class FyersBroker(BrokerBase):
         Internal callback for handling WebSocket messages.
         """
         # Standardize the tick data to match Zerodha's format
-        if isinstance(message, list) and len(message) > 0 and "ltp" in message[0]:
-            symbol = message[0].get("symbol")
-            token = self.symbol_to_token.get(symbol)
-            standardized_tick = {
-                "instrument_token": token,
-                "last_price": message[0].get("ltp"),
-                # Add other relevant fields here
-            }
-            if self.on_ticks:
-                self.on_ticks(self.ws, [standardized_tick])
+        if isinstance(message, list):
+            standardized_ticks = []
+            for tick in message:
+                if "ltp" in tick:
+                    symbol = tick.get("symbol")
+                    token = self.symbol_to_token.get(symbol)
+                    standardized_ticks.append(
+                        {
+                            "instrument_token": token,
+                            "last_price": tick.get("ltp"),
+                            # Add other relevant fields here
+                        }
+                    )
+            if self.on_ticks and standardized_ticks:
+                self.on_ticks(self.ws, standardized_ticks)
         else:
             # Handle other message types if necessary
             logger.debug(f"Received non-tick message: {message}")
@@ -617,6 +622,22 @@ class FyersBroker(BrokerBase):
         self.ws.keep_running()
         if self.on_connect:
             self.on_connect(self.ws, "Connection opened")
+
+    def connect_websocket(self):
+        """
+        Establish a WebSocket connection for live data streaming.
+        """
+        self.ws = data_ws.FyersDataSocket(
+            access_token=self.access_token,
+            log_path=self.log_path,
+            litemode=self.litemode,
+            write_to_file=self.write_to_file,
+            reconnect=self.reconnect,
+            on_connect=self._on_ws_open,
+            on_close=self._on_ws_close,
+            on_message=self._on_ws_message,
+        )
+        self.ws.connect()
 
     def download_instruments(self):
         # Define the URLs for different exchanges
