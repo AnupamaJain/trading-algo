@@ -638,12 +638,8 @@ if __name__ == "__main__":
     import random
     import traceback
     import warnings
-
-from dotenv import load_dotenv
-load_dotenv()
-
-    warnings.filterwarnings("ignore")
-
+    from dotenv import load_dotenv
+    load_dotenv()
     import logging
     logger.setLevel(logging.INFO)
     
@@ -823,6 +819,8 @@ PARAMETER GROUPS:
         
         parser.add_argument('--env-file', type=str, default='.env', help='Path to the .env file')
 
+        parser.add_argument('--force', action='store_true', help='Bypass interactive configuration prompt.')
+
         return parser
 
     def show_config(config):
@@ -945,7 +943,7 @@ PARAMETER GROUPS:
     # ==========================================================================
     
     # Validate that user has updated default configuration values
-    def validate_configuration(config):
+    def validate_configuration(config, force=False):
         """
         Validate that user has updated at least some default configuration values
         Returns True if config is valid, False otherwise
@@ -1024,6 +1022,9 @@ PARAMETER GROUPS:
             print("="*80)
             
             # Ask for user confirmation
+            if force:
+                print("\n--force flag detected. Bypassing interactive confirmation.")
+                return True
             while True:
                 response = input("\nDo you want to proceed with this configuration? (yes/no): ").lower().strip()
                 if response in ['yes', 'y']:
@@ -1046,7 +1047,7 @@ PARAMETER GROUPS:
         return True
     
     # Run configuration validation
-    if not validate_configuration(config):
+    if not validate_configuration(config, force=args.force):
         logger.error("Configuration validation failed. Please update your configuration.")
         sys.exit(1)
 
