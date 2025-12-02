@@ -592,6 +592,13 @@ class FyersDriver(BrokerDriver):
     def get_instruments(self) -> List[Instrument]:
         return self.master_contract_df
 
+    def get_nse_futures_symbols(self) -> List[str]:
+        if self.master_contract_df is None:
+            self.download_instruments()
+
+        futures_df = self.master_contract_df[self.master_contract_df['segment'] == 'NFO-FUT']
+        return futures_df['symbol'].tolist()
+
     # --- Option chain ---
     def get_option_chain(self, underlying: str, exchange: str, **kwargs: Any) -> List[Dict[str, Any]]:
         if not self._fyers_model:

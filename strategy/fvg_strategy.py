@@ -20,7 +20,7 @@ class FVGStrategy:
         self.broker = broker
         self.order_tracker = order_tracker
 
-        self.symbols = self.strat_var_symbols
+        self.symbols = self.broker.get_nse_futures_symbols()
         self.positions = {}
 
         logger.info("FVG Strategy initialized")
