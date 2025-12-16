@@ -8,6 +8,8 @@ import time
 from datetime import datetime, timedelta
 from termcolor import colored
 import argparse
+from scipy.signal import find_peaks
+import numpy as np
 
 class FVGStrategy:
     """
@@ -23,8 +25,27 @@ class FVGStrategy:
         self.broker.download_instruments()
         self.symbols = self.broker.get_nse_futures_symbols()
         self.positions = {}
+        self.order_blocks = {}
 
         logger.info("FVG Strategy initialized")
+
+    def _find_swing_points(self, df):
+        """Identifies swing highs and lows from historical data."""
+        lookback = self.strat_var_swing_lookback
+
+        high_peaks_indices, _ = find_peaks(df['high'], distance=lookback)
+        low_peaks_indices, _ = find_peaks(-df['low'], distance=lookback)
+
+        swing_highs = np.zeros(len(df), dtype=bool)
+        swing_lows = np.zeros(len(df), dtype=bool)
+
+        swing_highs[high_peaks_indices] = True
+        swing_lows[low_peaks_indices] = True
+
+        df['swing_high'] = swing_highs
+        df['swing_low'] = swing_lows
+
+        return df
 
     def run(self):
         logger.info("Running FVG Strategy")
@@ -103,6 +124,9 @@ class FVGStrategy:
                 df['bullish_fvg'] = self.is_bullish_fvg(df)
                 df['bearish_fvg'] = self.is_bearish_fvg(df)
 
+                df = self._find_swing_points(df)
+                self.order_blocks[symbol] = self._identify_order_block(df)
+
                 self.check_long_entry_conditions(df, symbol)
                 self.check_short_entry_conditions(df, symbol)
 
@@ -114,6 +138,34 @@ class FVGStrategy:
 
     def is_bearish_fvg(self, df):
         return df['high'] < df['low'].shift(2)
+
+    def _identify_order_block(self, df):
+        """Identifies the most recent order block based on swing points."""
+        order_block = None
+        # Find the index of the last swing high and last swing low
+        last_swing_high_idx = df.index[df['swing_high']].max()
+        last_swing_low_idx = df.index[df['swing_low']].max()
+
+        if pd.isna(last_swing_high_idx) or pd.isna(last_swing_low_idx):
+            return None # Not enough market structure yet
+
+        # If the most recent swing is a high, look for a bullish order block
+        if last_swing_high_idx > last_swing_low_idx:
+            search_area = df.loc[:last_swing_high_idx]
+            down_candles = search_area[search_area['close'] < search_area['open']]
+            if not down_candles.empty:
+                ob_candle = down_candles.iloc[-1]
+                order_block = {'top': ob_candle['high'], 'bottom': ob_candle['low'], 'type': 'bullish'}
+
+        # If the most recent swing is a low, look for a bearish order block
+        elif last_swing_low_idx > last_swing_high_idx:
+            search_area = df.loc[:last_swing_low_idx]
+            up_candles = search_area[search_area['close'] > search_area['open']]
+            if not up_candles.empty:
+                ob_candle = up_candles.iloc[-1]
+                order_block = {'top': ob_candle['high'], 'bottom': ob_candle['low'], 'type': 'bearish'}
+
+        return order_block
 
     def check_long_entry_conditions(self, df, symbol):
         if len(df) < 3:
@@ -129,10 +181,18 @@ class FVGStrategy:
         crossed_vwap = fvg_candle['low'] < fvg_candle['vwap'] and fvg_candle['high'] > fvg_candle['vwap']
         crossed_ema = fvg_candle['low'] < fvg_candle['ema200'] and fvg_candle['high'] > fvg_candle['ema200']
 
-        # Condition 3: Is the entry candle's high above the FVG candle's high?
+        # Condition 3: Is the FVG near a bullish order block?
+        order_block = self.order_blocks.get(symbol)
+        near_order_block = False
+        if order_block and order_block['type'] == 'bullish':
+            # Check if any part of the FVG candle is within the order block
+            if max(fvg_candle['low'], order_block['bottom']) <= min(fvg_candle['high'], order_block['top']):
+                near_order_block = True
+
+        # Condition 4: Is the entry candle's high above the FVG candle's high?
         entry_trigger = entry_candle['high'] > fvg_candle['high']
 
-        if is_fvg and (crossed_vwap or crossed_ema) and entry_trigger:
+        if is_fvg and (crossed_vwap or crossed_ema) and near_order_block and entry_trigger:
             entry_price = fvg_candle['high']
             stop_loss = fvg_candle['low']
             target = entry_price + (entry_price - stop_loss) # 1:1 RR
@@ -154,10 +214,17 @@ class FVGStrategy:
         crossed_vwap = fvg_candle['low'] < fvg_candle['vwap'] and fvg_candle['high'] > fvg_candle['vwap']
         crossed_ema = fvg_candle['low'] < fvg_candle['ema200'] and fvg_candle['high'] > fvg_candle['ema200']
 
-        # Condition 3: Is the entry candle's low below the FVG candle's low?
+        # Condition 3: Is the FVG near a bearish order block?
+        order_block = self.order_blocks.get(symbol)
+        near_order_block = False
+        if order_block and order_block['type'] == 'bearish':
+            if max(fvg_candle['low'], order_block['bottom']) <= min(fvg_candle['high'], order_block['top']):
+                near_order_block = True
+
+        # Condition 4: Is the entry candle's low below the FVG candle's low?
         entry_trigger = entry_candle['low'] < fvg_candle['low']
 
-        if is_fvg and (crossed_vwap or crossed_ema) and entry_trigger:
+        if is_fvg and (crossed_vwap or crossed_ema) and near_order_block and entry_trigger:
             entry_price = fvg_candle['low']
             stop_loss = fvg_candle['high']
             target = entry_price - (stop_loss - entry_price) # 1:1 RR
