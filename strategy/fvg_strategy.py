@@ -94,6 +94,10 @@ class FVGStrategy:
                 if df.empty:
                     continue
 
+                # Convert 'ts' to datetime and set as index
+                df['ts'] = pd.to_datetime(df['ts'], unit='s')
+                df.set_index('ts', inplace=True)
+
                 df['vwap'] = ta.vwap(df['high'], df['low'], df['close'], df['volume'])
                 df['ema200'] = ta.ema(df['close'], length=self.strat_var_ema_length)
                 df['bullish_fvg'] = self.is_bullish_fvg(df)
