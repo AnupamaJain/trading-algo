@@ -100,9 +100,9 @@ class FVGStrategy:
 
                 df['vwap'] = ta.vwap(df['high'], df['low'], df['close'], df['volume'])
                 df['ema200'] = ta.ema(df['close'], length=self.strat_var_ema_length)
-                df['rsi'] = ta.rsi(df['close'], length=self.strat_var_rsi_length)
                 df['bullish_fvg'] = self.is_bullish_fvg(df)
                 df['bearish_fvg'] = self.is_bearish_fvg(df)
+
                 self.check_long_entry_conditions(df, symbol)
                 self.check_short_entry_conditions(df, symbol)
 
@@ -116,46 +116,54 @@ class FVGStrategy:
         return df['high'] < df['low'].shift(2)
 
     def check_long_entry_conditions(self, df, symbol):
-        last_candle = df.iloc[-1]
-        second_last_candle = df.iloc[-2]
+        if len(df) < 3:
+            return
 
-        if (last_candle['bullish_fvg'] and
-            (last_candle['close'] > last_candle['vwap'] or last_candle['close'] > last_candle['ema200']) and
-            self.is_near_support(df) and
-            last_candle['rsi'] < self.strat_var_rsi_overbought and
-            last_candle['volume'] > df['volume'].rolling(window=20).mean().iloc[-1] * self.strat_var_volume_factor):
-            entry_price = last_candle['high']
-            stop_loss = second_last_candle['low']
-            target = entry_price + 2 * (entry_price - stop_loss)
+        fvg_candle = df.iloc[-2]
+        entry_candle = df.iloc[-1]
+
+        # Condition 1: Is the second-to-last candle a Bullish FVG?
+        is_fvg = fvg_candle['bullish_fvg']
+
+        # Condition 2: Did the FVG candle cross VWAP or EMA200?
+        crossed_vwap = fvg_candle['low'] < fvg_candle['vwap'] and fvg_candle['high'] > fvg_candle['vwap']
+        crossed_ema = fvg_candle['low'] < fvg_candle['ema200'] and fvg_candle['high'] > fvg_candle['ema200']
+
+        # Condition 3: Is the entry candle's high above the FVG candle's high?
+        entry_trigger = entry_candle['high'] > fvg_candle['high']
+
+        if is_fvg and (crossed_vwap or crossed_ema) and entry_trigger:
+            entry_price = fvg_candle['high']
+            stop_loss = fvg_candle['low']
+            target = entry_price + (entry_price - stop_loss) # 1:1 RR
 
             logger.info(f"Long entry condition met for {symbol}: Entry at {entry_price}, SL at {stop_loss}, Target at {target}")
             self._place_order(symbol, 1, TransactionType.BUY, entry_price, stop_loss, target, "LONG")
 
     def check_short_entry_conditions(self, df, symbol):
-        last_candle = df.iloc[-1]
-        second_last_candle = df.iloc[-2]
+        if len(df) < 3:
+            return
 
-        if (last_candle['bearish_fvg'] and
-            (last_candle['close'] < last_candle['vwap'] or last_candle['close'] < last_candle['ema200']) and
-            self.is_near_resistance(df) and
-            last_candle['rsi'] > self.strat_var_rsi_oversold and
-            last_candle['volume'] > df['volume'].rolling(window=20).mean().iloc[-1] * self.strat_var_volume_factor):
-            entry_price = last_candle['low']
-            stop_loss = second_last_candle['high']
-            target = entry_price - 2 * (stop_loss - entry_price)
+        fvg_candle = df.iloc[-2]
+        entry_candle = df.iloc[-1]
+
+        # Condition 1: Is the second-to-last candle a Bearish FVG?
+        is_fvg = fvg_candle['bearish_fvg']
+
+        # Condition 2: Did the FVG candle cross VWAP or EMA200?
+        crossed_vwap = fvg_candle['low'] < fvg_candle['vwap'] and fvg_candle['high'] > fvg_candle['vwap']
+        crossed_ema = fvg_candle['low'] < fvg_candle['ema200'] and fvg_candle['high'] > fvg_candle['ema200']
+
+        # Condition 3: Is the entry candle's low below the FVG candle's low?
+        entry_trigger = entry_candle['low'] < fvg_candle['low']
+
+        if is_fvg and (crossed_vwap or crossed_ema) and entry_trigger:
+            entry_price = fvg_candle['low']
+            stop_loss = fvg_candle['high']
+            target = entry_price - (stop_loss - entry_price) # 1:1 RR
 
             logger.info(f"Short entry condition met for {symbol}: Entry at {entry_price}, SL at {stop_loss}, Target at {target}")
             self._place_order(symbol, 1, TransactionType.SELL, entry_price, stop_loss, target, "SHORT")
-
-    def is_near_support(self, df):
-        recent_low = df['low'].tail(20).min()
-        last_close = df.iloc[-1]['close']
-        return (last_close - recent_low) / recent_low < self.strat_var_support_proximity_threshold
-
-    def is_near_resistance(self, df):
-        recent_high = df['high'].tail(20).max()
-        last_close = df.iloc[-1]['close']
-        return (recent_high - last_close) / last_close < self.strat_var_support_proximity_threshold
 
     def _place_order(self, symbol, quantity, transaction_type, entry_price, stop_loss, target, position_type):
         exchange_str, _ = symbol.split(':')
