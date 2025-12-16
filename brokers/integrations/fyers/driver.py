@@ -68,7 +68,7 @@ class FyersDriver(BrokerDriver):
 
         # If no token, try login flows based on BROKER_LOGIN_MODE
         login_mode_env = (os.getenv("BROKER_LOGIN_MODE") or "auto").lower()
-        if not self._access_token and self._client_id and login_mode_env in ("totp", "auto"):
+        if self._client_id and login_mode_env in ("totp", "auto"):
             token = self._authenticate_via_totp()
             if token:
                 self._access_token = token
