@@ -94,10 +94,6 @@ class FVGStrategy:
                 if df.empty:
                     continue
 
-                # Convert 'ts' to datetime and set as index
-                df['ts'] = pd.to_datetime(df['ts'], unit='s')
-                df.set_index('ts', inplace=True)
-
                 df['vwap'] = ta.vwap(df['high'], df['low'], df['close'], df['volume'])
                 df['ema200'] = ta.ema(df['close'], length=self.strat_var_ema_length)
                 df['bullish_fvg'] = self.is_bullish_fvg(df)
@@ -152,6 +148,16 @@ class FVGStrategy:
         exchange_str, _ = symbol.split(':')
         exchange = Exchange[exchange_str]
 
+        # Immediately add to positions with 'ATTEMPTING' status
+        self.positions[symbol] = {
+            "order_id": None,
+            "entry_price": entry_price,
+            "stop_loss": stop_loss,
+            "target": target,
+            "status": "ATTEMPTING",
+            "type": position_type
+        }
+
         req = OrderRequest(
             symbol=symbol.split(':')[1],
             exchange=exchange,
@@ -166,16 +172,11 @@ class FVGStrategy:
         order_resp = self.broker.place_order(req)
 
         if order_resp.status == "ok":
-            self.positions[symbol] = {
-                "order_id": order_resp.order_id,
-                "entry_price": entry_price,
-                "stop_loss": stop_loss,
-                "target": target,
-                "status": "PENDING_ENTRY",
-                "type": position_type
-            }
+            self.positions[symbol]['order_id'] = order_resp.order_id
+            self.positions[symbol]['status'] = "PENDING_ENTRY"
             logger.info(f"Order placed for {symbol}: {order_resp.order_id}")
         else:
+            self.positions[symbol]['status'] = "FAILED"
             logger.error(f"Failed to place order for {symbol}: {order_resp.message}")
 
     def manage_positions(self):
@@ -216,12 +217,14 @@ class FVGStrategy:
 
         table_data = []
         for symbol, pos in self.positions.items():
-            quote = self.broker.get_quote(symbol)
+            quote = None
+            if pos['status'] not in ["ATTEMPTING", "FAILED"]:
+                quote = self.broker.get_quote(symbol)
 
             row = {
                 "stock_name": symbol.split(':')[1],
                 "symbol": symbol,
-                "future_price": quote.last_price,
+                "future_price": quote.last_price if quote else 'N/A',
                 "entry_price": pos['entry_price'],
                 "target_price": pos['target'],
                 "stoploss_price": pos['stop_loss'],
