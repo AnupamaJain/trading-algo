@@ -13,13 +13,13 @@ class FVGStrategy:
     """
     FVG (Fair Value Gap) Trading Strategy
     """
-
+    
     def __init__(self, broker, config, order_tracker):
         for k, v in config.items():
             setattr(self, f'strat_var_{k}', v)
         self.broker = broker
         self.order_tracker = order_tracker
-
+        
         self.broker.download_instruments()
         self.symbols = self.broker.get_nse_futures_symbols()
         self.positions = {}
@@ -31,12 +31,12 @@ class FVGStrategy:
         while True:
             now = datetime.now()
             next_run = (now - timedelta(minutes=now.minute % 15, seconds=now.second, microseconds=now.microsecond)) + timedelta(minutes=15)
-
+            
             self.check_open_orders()
             self.analyze_and_trade()
             self.manage_positions()
             self.display_table()
-
+            
             sleep_time = (next_run - datetime.now()).total_seconds()
             if sleep_time > 0:
                 time.sleep(sleep_time)
@@ -64,7 +64,7 @@ class FVGStrategy:
         sl_resp = self.broker.place_order(sl_req)
         if sl_resp.status == 'ok':
             pos['sl_order_id'] = sl_resp.order_id
-
+        
         # Place Target order
         tgt_req = OrderRequest(
             symbol=symbol.split(':')[1],
@@ -81,7 +81,7 @@ class FVGStrategy:
 
     def analyze_and_trade(self):
         logger.info("Analyzing for FVG patterns...")
-
+        
         end_date = datetime.now().strftime("%Y-%m-%d")
         start_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
 
@@ -93,7 +93,10 @@ class FVGStrategy:
                 df = pd.DataFrame(self.broker.get_history(symbol, "15m", start_date, end_date))
                 if df.empty:
                     continue
-
+                 # Convert 'ts' to datetime and set as index
+                df['ts'] = pd.to_datetime(df['ts'], unit='s')
+                df.set_index('ts', inplace=True)
+                        
                 df['vwap'] = ta.vwap(df['high'], df['low'], df['close'], df['volume'])
                 df['ema200'] = ta.ema(df['close'], length=self.strat_var_ema_length)
                 df['bullish_fvg'] = self.is_bullish_fvg(df)
@@ -106,7 +109,7 @@ class FVGStrategy:
 
     def is_bullish_fvg(self, df):
         return df['low'] > df['high'].shift(2)
-
+        
     def is_bearish_fvg(self, df):
         return df['high'] < df['low'].shift(2)
 
@@ -118,10 +121,10 @@ class FVGStrategy:
             entry_price = last_candle['high']
             stop_loss = second_last_candle['low']
             target = entry_price + 2 * (entry_price - stop_loss)
-
+            
             logger.info(f"Long entry condition met for {symbol}: Entry at {entry_price}, SL at {stop_loss}, Target at {target}")
             self._place_order(symbol, 1, TransactionType.BUY, entry_price, stop_loss, target, "LONG")
-
+            
     def check_short_entry_conditions(self, df, symbol):
         last_candle = df.iloc[-1]
         second_last_candle = df.iloc[-2]
@@ -130,15 +133,15 @@ class FVGStrategy:
             entry_price = last_candle['low']
             stop_loss = second_last_candle['high']
             target = entry_price - 2 * (stop_loss - entry_price)
-
+            
             logger.info(f"Short entry condition met for {symbol}: Entry at {entry_price}, SL at {stop_loss}, Target at {target}")
             self._place_order(symbol, 1, TransactionType.SELL, entry_price, stop_loss, target, "SHORT")
-
+    
     def is_near_support(self, df):
         recent_low = df['low'].tail(20).min()
         last_close = df.iloc[-1]['close']
         return (last_close - recent_low) / recent_low < self.strat_var_support_proximity_threshold
-
+        
     def is_near_resistance(self, df):
         recent_high = df['high'].tail(20).max()
         last_close = df.iloc[-1]['close']
@@ -147,7 +150,6 @@ class FVGStrategy:
     def _place_order(self, symbol, quantity, transaction_type, entry_price, stop_loss, target, position_type):
         exchange_str, _ = symbol.split(':')
         exchange = Exchange[exchange_str]
-
         # Immediately add to positions with 'ATTEMPTING' status
         self.positions[symbol] = {
             "order_id": None,
@@ -159,18 +161,18 @@ class FVGStrategy:
         }
 
         req = OrderRequest(
-            symbol=symbol.split(':')[1],
-            exchange=exchange,
+            symbol=symbol.split(':')[1], 
+            exchange=exchange, 
             transaction_type=transaction_type,
-            quantity=quantity,
-            product_type=ProductType.MARGIN,
+            quantity=quantity, 
+            product_type=ProductType.MARGIN, 
             order_type=OrderType.STOP,
             price=entry_price,
             stop_price=entry_price
         )
-
+        
         order_resp = self.broker.place_order(req)
-
+        
         if order_resp.status == "ok":
             self.positions[symbol]['order_id'] = order_resp.order_id
             self.positions[symbol]['status'] = "PENDING_ENTRY"
@@ -214,13 +216,13 @@ class FVGStrategy:
 
     def display_table(self):
         os.system('cls' if os.name == 'nt' else 'clear')
-
+        
         table_data = []
         for symbol, pos in self.positions.items():
             quote = None
             if pos['status'] not in ["ATTEMPTING", "FAILED"]:
                 quote = self.broker.get_quote(symbol)
-
+            
             row = {
                 "stock_name": symbol.split(':')[1],
                 "symbol": symbol,
@@ -234,17 +236,23 @@ class FVGStrategy:
             table_data.append(row)
 
         df = pd.DataFrame(table_data)
-
+        
         print("--- FVG Strategy Live Positions ---")
         if not df.empty:
-            for index, row in df.iterrows():
-                color = None
-                if row['order_filled'] == 'CLOSED_SL':
-                    color = 'red'
-                elif row['order_filled'] == 'CLOSED_TARGET':
-                    color = 'green'
+            table_str = df.to_string()
+            lines = table_str.split('\n')
+            header = lines[0]
+            data_lines = lines[1:]
 
-                print(colored(row.to_string(), color))
+            print(header)
+            for i, line in enumerate(data_lines):
+                status = df.iloc[i]['order_filled']
+                if status == 'CLOSED_SL':
+                    print(colored(line, 'red'))
+                elif status == 'CLOSED_TARGET':
+                    print(colored(line, 'green'))
+                else:
+                    print(line)
         else:
             print("No open positions.")
         print("-----------------------------------")
@@ -267,7 +275,7 @@ if __name__ == "__main__":
     parser.add_argument('--ema-length', type=int, help='Length for EMA calculation')
     parser.add_argument('--support-proximity-threshold', type=float, help='Proximity threshold for support zone')
     args = parser.parse_args()
-
+    
     # Construct an absolute path to the config file
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     config_file = os.path.join(project_root, "strategy", "configs", "fvg_strategy.yml")
@@ -280,9 +288,9 @@ if __name__ == "__main__":
         config['ema_length'] = args.ema_length
     if args.support_proximity_threshold:
         config['support_proximity_threshold'] = args.support_proximity_threshold
-
+    
     broker = BrokerGateway.from_name(os.getenv("BROKER_NAME"))
     order_tracker = OrderTracker()
-
+    
     strategy = FVGStrategy(broker, config, order_tracker)
     strategy.run()
