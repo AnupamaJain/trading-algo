@@ -22,6 +22,6 @@ default:
     # The trade is triggered for the *most recent interval* (e.g., '3m').
     trade_threshold_percent: 20
     quantity: 75
-    product_type: "NRML" # NRML for normal, MIS for intraday
+    product_type: "MARGIN" # MARGIN for normal, INTRADAY for intraday
     order_type: "MARKET" # MARKET or LIMIT
     tag: "OI_TRACKER"
