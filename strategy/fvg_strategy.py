@@ -360,6 +360,7 @@ if __name__ == "__main__":
     parser.add_argument('--symbols', type=str, nargs='+', help='List of symbols to trade')
     parser.add_argument('--ema-length', type=int, help='Length for EMA calculation')
     parser.add_argument('--support-proximity-threshold', type=float, help='Proximity threshold for support zone')
+    parser.add_argument('--swing-lookback', type=int, help='Lookback period for swing point detection')
     args = parser.parse_args()
 
     # Construct an absolute path to the config file
@@ -374,6 +375,8 @@ if __name__ == "__main__":
         config['ema_length'] = args.ema_length
     if args.support_proximity_threshold:
         config['support_proximity_threshold'] = args.support_proximity_threshold
+    if args.swing_lookback:
+        config['swing_lookback'] = args.swing_lookback
 
     broker = BrokerGateway.from_name(os.getenv("BROKER_NAME"))
     order_tracker = OrderTracker()
