@@ -2,3 +2,7 @@ default:
   ema_length: 200
   vwap_length: 14
   support_proximity_threshold: 0.01
+  rsi_length: 14
+  rsi_overbought: 70
+  rsi_oversold: 30
+  volume_factor: 1.5

@@ -94,8 +94,13 @@ class FVGStrategy:
                 if df.empty:
                     continue
 
+                # Convert 'ts' to datetime and set as index
+                df['ts'] = pd.to_datetime(df['ts'], unit='s')
+                df.set_index('ts', inplace=True)
+
                 df['vwap'] = ta.vwap(df['high'], df['low'], df['close'], df['volume'])
                 df['ema200'] = ta.ema(df['close'], length=self.strat_var_ema_length)
+                df['rsi'] = ta.rsi(df['close'], length=self.strat_var_rsi_length)
                 df['bullish_fvg'] = self.is_bullish_fvg(df)
                 df['bearish_fvg'] = self.is_bearish_fvg(df)
                 self.check_long_entry_conditions(df, symbol)
@@ -114,7 +119,11 @@ class FVGStrategy:
         last_candle = df.iloc[-1]
         second_last_candle = df.iloc[-2]
 
-        if last_candle['bullish_fvg'] and (last_candle['close'] > last_candle['vwap'] or last_candle['close'] > last_candle['ema200']) and self.is_near_support(df):
+        if (last_candle['bullish_fvg'] and
+            (last_candle['close'] > last_candle['vwap'] or last_candle['close'] > last_candle['ema200']) and
+            self.is_near_support(df) and
+            last_candle['rsi'] < self.strat_var_rsi_overbought and
+            last_candle['volume'] > df['volume'].rolling(window=20).mean().iloc[-1] * self.strat_var_volume_factor):
             entry_price = last_candle['high']
             stop_loss = second_last_candle['low']
             target = entry_price + 2 * (entry_price - stop_loss)
@@ -126,7 +135,11 @@ class FVGStrategy:
         last_candle = df.iloc[-1]
         second_last_candle = df.iloc[-2]
 
-        if last_candle['bearish_fvg'] and (last_candle['close'] < last_candle['vwap'] or last_candle['close'] < last_candle['ema200']) and self.is_near_resistance(df):
+        if (last_candle['bearish_fvg'] and
+            (last_candle['close'] < last_candle['vwap'] or last_candle['close'] < last_candle['ema200']) and
+            self.is_near_resistance(df) and
+            last_candle['rsi'] > self.strat_var_rsi_oversold and
+            last_candle['volume'] > df['volume'].rolling(window=20).mean().iloc[-1] * self.strat_var_volume_factor):
             entry_price = last_candle['low']
             stop_loss = second_last_candle['high']
             target = entry_price - 2 * (stop_loss - entry_price)
