@@ -124,6 +124,12 @@ class FVGStrategy:
                 df['bullish_fvg'] = self.is_bullish_fvg(df)
                 df['bearish_fvg'] = self.is_bearish_fvg(df)
 
+                # Data Validation: Remove rows with NaN values from indicator calculations
+                df.dropna(inplace=True)
+                # Ensure there's enough data left for analysis
+                if len(df) < max(self.strat_var_swing_lookback, 3):
+                    continue
+
                 df = self._find_swing_points(df)
                 self.order_blocks[symbol] = self._identify_order_block(df)
 
