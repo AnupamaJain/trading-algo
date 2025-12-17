@@ -3,3 +3,5 @@ pandas-ta
 pyyaml
 termcolor
 scipy
+python-dotenv
+requests
