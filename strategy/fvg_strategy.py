@@ -29,44 +29,26 @@ class FVGStrategy:
         logger.info("FVG Strategy initialized")
 
     def _get_target_symbols(self):
-        """Fetches all NSE F&O stock futures, precious metals, and MCX futures."""
+        """Fetches all NSE F&O stock futures and MCX futures."""
         all_instruments = self.broker.get_instruments()
 
         # 1. Create a whitelist of valid stock underlyings from the cash market segment
         stock_symbols_df = all_instruments[all_instruments['segment'] == 'NSE']
-        # Extract the base symbol (e.g., 'SBIN' from 'SBIN-EQ')
         stock_underlyings = set(stock_symbols_df['symbol'].str.replace('-EQ', ''))
 
         # 2. Filter for NSE futures contracts that are actual stock futures and have not expired
         futures_df = all_instruments[
             (all_instruments['segment'] == 'NFO-FUT') &
             (all_instruments['expiry'] >= pd.to_datetime('today').date()) &
-            (all_instruments['underlying_symbol'].isin(stock_underlyings)) # Ensure the underlying is a stock
+            (all_instruments['underlying_symbol'].isin(stock_underlyings))
         ].copy()
 
         # Find the nearest expiry for each underlying symbol
         futures_df['expiry'] = pd.to_datetime(futures_df['expiry'])
         nearest_expiry_df = futures_df.loc[futures_df.groupby('underlying_symbol')['expiry'].idxmin()]
-
         stock_futures = nearest_expiry_df['symbol'].tolist()
 
-        # 3. Add Gold and Silver futures separately
-        precious_metals = ["GOLDM", "SILVERM"]
-
-        metal_futures_df = all_instruments[
-            (all_instruments['underlying_symbol'].isin(precious_metals)) &
-            (all_instruments['instrument_type'] == 'FUT') & # Ensure we get futures, not options
-            (all_instruments['expiry'] >= pd.to_datetime('today').date())
-        ].copy()
-
-        if not metal_futures_df.empty:
-            metal_futures_df['expiry'] = pd.to_datetime(metal_futures_df['expiry'])
-            nearest_metal_expiry_df = metal_futures_df.loc[metal_futures_df.groupby('underlying_symbol')['expiry'].idxmin()]
-            metal_symbols = nearest_metal_expiry_df['symbol'].tolist()
-        else:
-            metal_symbols = []
-
-        # 4. Get all current-expiry MCX futures
+        # 3. Get all current-expiry MCX futures
         mcx_futures_df = all_instruments[
             (all_instruments['exchange'] == 'MCX') &
             (all_instruments['instrument_type'] == 'FUT') &
@@ -80,10 +62,10 @@ class FVGStrategy:
         else:
             mcx_symbols = []
 
-        # Combine all symbols and remove duplicates
-        final_symbols = list(set(stock_futures + metal_symbols + mcx_symbols))
+        # Combine all symbols
+        final_symbols = list(set(stock_futures + mcx_symbols))
 
-        logger.info(f"Tracking {len(stock_futures)} stock futures, {len(metal_symbols)} specific metal futures, and {len(mcx_symbols)} other MCX futures. Total unique symbols: {len(final_symbols)}")
+        logger.info(f"Tracking {len(stock_futures)} stock futures and {len(mcx_symbols)} MCX futures. Total unique symbols: {len(final_symbols)}")
         return final_symbols
 
 
@@ -158,7 +140,7 @@ class FVGStrategy:
         # Using scipy find_peaks for more robust peak/trough detection
         high_peaks, _ = find_peaks(df['High'], distance=lookback, prominence=df['atr'].mean() * 0.5)
         low_peaks, _ = find_peaks(-df['Low'], distance=lookback, prominence=df['atr'].mean() * 0.5)
-        
+
         df['swing_high'] = False
         df.iloc[high_peaks, df.columns.get_loc('swing_high')] = True
 
@@ -288,7 +270,7 @@ class FVGStrategy:
             quantity=quantity, product_type=ProductType.MARGIN, order_type=OrderType.STOP,
             price=entry_price, stop_price=entry_price
         )
-        
+
         # 2. Stop Loss Order
         sl_transaction_type = TransactionType.SELL if transaction_type == TransactionType.BUY else TransactionType.BUY
         sl_order = OrderRequest(
