@@ -29,52 +29,24 @@ class FVGStrategy:
         logger.info("FVG Strategy initialized")
 
     def _get_target_symbols(self):
-        """Fetches all NSE F&O stock futures and MCX futures."""
-        all_instruments = self.broker.get_instruments()
+        """Fetches all NSE F&O stock futures and MCX futures using driver methods."""
+        try:
+            # The driver methods are assumed to exist and are specific to the broker.
+            # This is a cleaner, more abstract way to get the symbols.
+            stock_futures = self.broker.get_nse_futures_symbols()
+            mcx_futures = self.broker.get_mcx_futures_symbols()
 
-        # 1. Create a whitelist of valid stock underlyings from the cash market segment
-        # We must filter for instrument_type 'EQ' to get only equities
-        stock_symbols_df = all_instruments[
-            (all_instruments['exchange'] == 10) &  # NSE
-            (all_instruments['instrument_type'] == 'EQ')
-        ]
-        stock_underlyings = set(stock_symbols_df['underlying_symbol'])
+            final_symbols = list(set(stock_futures + mcx_futures))
 
-        # 2. Filter for NSE futures that are based on the stock underlyings whitelist
-        futures_df = all_instruments[
-            (all_instruments['exchange'] == 10) &  # NSE
-            (all_instruments['instrument_type'] == 'FUT') &
-            (all_instruments['expiry'] >= pd.to_datetime('today').date()) &
-            (all_instruments['underlying_symbol'].isin(stock_underlyings))
-        ].copy()
-
-        # Find the nearest expiry for each stock future
-        if not futures_df.empty:
-            futures_df['expiry'] = pd.to_datetime(futures_df['expiry'])
-            nearest_stock_expiry_df = futures_df.loc[futures_df.groupby('underlying_symbol')['expiry'].idxmin()]
-            stock_futures = nearest_stock_expiry_df['symbol'].tolist()
-        else:
-            stock_futures = []
-
-        # 3. Get all current-expiry MCX futures (Exchange Code: 11)
-        mcx_futures_df = all_instruments[
-            (all_instruments['exchange'] == 11) & # MCX
-            (all_instruments['instrument_type'] == 'FUT') &
-            (all_instruments['expiry'] >= pd.to_datetime('today').date())
-        ].copy()
-
-        if not mcx_futures_df.empty:
-            mcx_futures_df['expiry'] = pd.to_datetime(mcx_futures_df['expiry'])
-            nearest_mcx_expiry_df = mcx_futures_df.loc[mcx_futures_df.groupby('underlying_symbol')['expiry'].idxmin()]
-            mcx_symbols = nearest_mcx_expiry_df['symbol'].tolist()
-        else:
-            mcx_symbols = []
-
-        # Combine all symbols
-        final_symbols = list(set(stock_futures + mcx_symbols))
-
-        logger.info(f"Tracking {len(stock_futures)} stock futures and {len(mcx_symbols)} MCX futures. Total unique symbols: {len(final_symbols)}")
-        return final_symbols
+            logger.info(f"Tracking {len(stock_futures)} stock futures and {len(mcx_futures)} MCX futures. Total unique symbols: {len(final_symbols)}")
+            return final_symbols
+        except AttributeError:
+            logger.error("The configured broker driver does not support 'get_nse_futures_symbols' or 'get_mcx_futures_symbols'.")
+            logger.error("Please use a compatible driver (e.g., Fyers).")
+            return []
+        except Exception as e:
+            logger.error(f"An error occurred while fetching target symbols: {e}")
+            return []
 
 
     def run(self):

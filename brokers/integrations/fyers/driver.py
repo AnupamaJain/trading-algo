@@ -597,19 +597,50 @@ class FyersDriver(BrokerDriver):
         if self.master_contract_df is None:
             self.download_instruments()
 
-        # Filter for NSE futures contracts that have not expired
+        # 1. Create a whitelist of stock symbols from the cash market segment
+        cash_market_df = self.master_contract_df[
+            (self.master_contract_df['exchange'] == 10) & # NSE
+            (self.master_contract_df['instrument_type'] == 'EQ')
+        ]
+        # Fyers symbols in cash segment are like 'SBIN-EQ', we need the base 'SBIN'
+        stock_symbols_whitelist = set(cash_market_df['symbol'].str.replace('-EQ', ''))
+
+        # 2. Filter for NSE futures contracts that have not expired
         futures_df = self.master_contract_df[
-            (self.master_contract_df['segment'] == 'NFO-FUT') &
+            (self.master_contract_df['exchange'] == 10) & # NSE
+            (self.master_contract_df['instrument_type'] == 'FUT') &
             (self.master_contract_df['expiry'] >= pd.to_datetime('today').date())
         ].copy()
 
-        # Find the nearest expiry for each underlying symbol
-        futures_df['expiry'] = pd.to_datetime(futures_df['expiry'])
-        nearest_expiry_df = futures_df.loc[futures_df.groupby('underlying_symbol')['expiry'].idxmin()]
+        # 3. Filter futures whose underlying symbol is in our stock whitelist
+        stock_futures_df = futures_df[futures_df['underlying_symbol'].isin(stock_symbols_whitelist)]
+
+        # 4. Find the nearest expiry for each underlying symbol
+        stock_futures_df['expiry'] = pd.to_datetime(stock_futures_df['expiry'])
+        nearest_expiry_df = stock_futures_df.loc[stock_futures_df.groupby('underlying_symbol')['expiry'].idxmin()]
 
         return nearest_expiry_df['symbol'].tolist()
-        futures_df = self.master_contract_df[self.master_contract_df['segment'] == 'NFO-FUT']
-        return futures_df['symbol'].tolist()
+
+    def get_mcx_futures_symbols(self) -> List[str]:
+        if self.master_contract_df is None:
+            self.download_instruments()
+
+        # 1. Define the target MCX underlying symbols
+        target_commodities = ["GOLDM", "SILVERM"]
+
+        # 2. Filter for MCX futures that have not expired
+        mcx_futures_df = self.master_contract_df[
+            (self.master_contract_df['exchange'] == 11) &  # MCX
+            (self.master_contract_df['instrument_type'] == 'FUT') &
+            (self.master_contract_df['underlying_symbol'].isin(target_commodities)) &
+            (self.master_contract_df['expiry'] >= pd.to_datetime('today').date())
+        ].copy()
+
+        # 3. Find the nearest expiry for each commodity
+        mcx_futures_df['expiry'] = pd.to_datetime(mcx_futures_df['expiry'])
+        nearest_expiry_df = mcx_futures_df.loc[mcx_futures_df.groupby('underlying_symbol')['expiry'].idxmin()]
+
+        return nearest_expiry_df['symbol'].tolist()
 
     # --- Option chain ---
     def get_option_chain(self, underlying: str, exchange: str, **kwargs: Any) -> List[Dict[str, Any]]:

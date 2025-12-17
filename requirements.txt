@@ -5,3 +5,4 @@ termcolor
 scipy
 python-dotenv
 requests
+numpy
