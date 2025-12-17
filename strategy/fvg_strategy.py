@@ -64,7 +64,7 @@ class FVGStrategy:
         sl_resp = self.broker.place_order(sl_req)
         if sl_resp.status == 'ok':
             pos['sl_order_id'] = sl_resp.order_id
-        
+
         # Place Target order
         tgt_req = OrderRequest(
             symbol=symbol.split(':')[1],
@@ -96,7 +96,7 @@ class FVGStrategy:
                  # Convert 'ts' to datetime and set as index
                 df['ts'] = pd.to_datetime(df['ts'], unit='s')
                 df.set_index('ts', inplace=True)
-                        
+
                 df['vwap'] = ta.vwap(df['high'], df['low'], df['close'], df['volume'])
                 df['ema200'] = ta.ema(df['close'], length=self.strat_var_ema_length)
                 df['bullish_fvg'] = self.is_bullish_fvg(df)
@@ -121,10 +121,10 @@ class FVGStrategy:
             entry_price = last_candle['high']
             stop_loss = second_last_candle['low']
             target = entry_price + 2 * (entry_price - stop_loss)
-            
+
             logger.info(f"Long entry condition met for {symbol}: Entry at {entry_price}, SL at {stop_loss}, Target at {target}")
             self._place_order(symbol, 1, TransactionType.BUY, entry_price, stop_loss, target, "LONG")
-            
+
     def check_short_entry_conditions(self, df, symbol):
         last_candle = df.iloc[-1]
         second_last_candle = df.iloc[-2]
@@ -133,15 +133,15 @@ class FVGStrategy:
             entry_price = last_candle['low']
             stop_loss = second_last_candle['high']
             target = entry_price - 2 * (stop_loss - entry_price)
-            
+
             logger.info(f"Short entry condition met for {symbol}: Entry at {entry_price}, SL at {stop_loss}, Target at {target}")
             self._place_order(symbol, 1, TransactionType.SELL, entry_price, stop_loss, target, "SHORT")
-    
+
     def is_near_support(self, df):
         recent_low = df['low'].tail(20).min()
         last_close = df.iloc[-1]['close']
         return (last_close - recent_low) / recent_low < self.strat_var_support_proximity_threshold
-        
+
     def is_near_resistance(self, df):
         recent_high = df['high'].tail(20).max()
         last_close = df.iloc[-1]['close']
@@ -161,11 +161,11 @@ class FVGStrategy:
         }
 
         req = OrderRequest(
-            symbol=symbol.split(':')[1], 
-            exchange=exchange, 
+            symbol=symbol.split(':')[1],
+            exchange=exchange,
             transaction_type=transaction_type,
-            quantity=quantity, 
-            product_type=ProductType.MARGIN, 
+            quantity=quantity,
+            product_type=ProductType.MARGIN,
             order_type=OrderType.STOP,
             price=entry_price,
             stop_price=entry_price
@@ -288,9 +288,9 @@ if __name__ == "__main__":
         config['ema_length'] = args.ema_length
     if args.support_proximity_threshold:
         config['support_proximity_threshold'] = args.support_proximity_threshold
-    
+
     broker = BrokerGateway.from_name(os.getenv("BROKER_NAME"))
     order_tracker = OrderTracker()
-    
+
     strategy = FVGStrategy(broker, config, order_tracker)
     strategy.run()

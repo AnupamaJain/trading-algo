@@ -1,4 +1,18 @@
 default:
+  # -- INDICATOR SETTINGS --
   ema_length: 200
-  vwap_length: 14
-  support_proximity_threshold: 0.01
+  atr_length: 14
+
+  # -- SWING & STRUCTURE SETTINGS --
+  swing_lookback: 20
+
+  # -- ORDER BLOCK SETTINGS --
+  order_block_body_ratio: 0.5
+  order_block_proximity_percent: 0.5
+
+  # -- FVG (FAIR VALUE GAP) SETTINGS --
+  fvg_atr_multiplier: 0.8
+
+  # -- TRADE MANAGEMENT --
+  risk_reward_ratio: 1.0
+  lot_size: 1
