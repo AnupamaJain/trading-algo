@@ -1,4 +1,9 @@
 default:
+  symbols:
+    - "NSE:NIFTY25JANFUT"
+    - "NSE:BANKNIFTY25JANFUT"
+    - "NSE:RELIANCE25JANFUT"
+    - "NSE:HDFCBANK25JANFUT"
   ema_length: 200
   vwap_length: 14
   support_proximity_threshold: 0.01

@@ -23,7 +23,11 @@ class FVGStrategy:
         self.order_tracker = order_tracker
 
         self.broker.download_instruments()
-        self.symbols = self.broker.get_nse_futures_symbols()
+        # Prioritize symbols from config, otherwise fetch all futures symbols
+        if hasattr(self, 'strat_var_symbols') and self.strat_var_symbols:
+            self.symbols = self.strat_var_symbols
+        else:
+            self.symbols = self.broker.get_nse_futures_symbols()
         self.positions = {}
         self.order_blocks = {}
 
@@ -184,12 +188,17 @@ class FVGStrategy:
         fvg_candle = df.iloc[-2]
         entry_candle = df.iloc[-1]
 
+        # --- Diagnostic Logging ---
+        log_prefix = f"DEBUG_LONG - {symbol} at {entry_candle.name}"
+
         # Condition 1: Is the second-to-last candle a Bullish FVG?
         is_fvg = fvg_candle['bullish_fvg']
+        logger.debug(f"{log_prefix} - Cond 1 (Is Bullish FVG): {is_fvg}")
 
         # Condition 2: Did the FVG candle cross VWAP or EMA200?
         crossed_vwap = fvg_candle['low'] < fvg_candle['vwap'] and fvg_candle['high'] > fvg_candle['vwap']
         crossed_ema = fvg_candle['low'] < fvg_candle['ema200'] and fvg_candle['high'] > fvg_candle['ema200']
+        logger.debug(f"{log_prefix} - Cond 2 (Crossed VWAP/EMA): {crossed_vwap or crossed_ema} (VWAP: {crossed_vwap}, EMA: {crossed_ema})")
 
         # Condition 3: Is the FVG near a bullish order block?
         order_block = self.order_blocks.get(symbol)
@@ -198,9 +207,12 @@ class FVGStrategy:
             # Check if any part of the FVG candle is within the order block
             if max(fvg_candle['low'], order_block['bottom']) <= min(fvg_candle['high'], order_block['top']):
                 near_order_block = True
+        logger.debug(f"{log_prefix} - Cond 3 (Near Bullish OB): {near_order_block} (OB: {order_block})")
+
 
         # Condition 4: Is the entry candle's high above the FVG candle's high?
         entry_trigger = entry_candle['high'] > fvg_candle['high']
+        logger.debug(f"{log_prefix} - Cond 4 (Entry Trigger): {entry_trigger} (Entry High: {entry_candle['high']}, FVG High: {fvg_candle['high']})")
 
         if is_fvg and (crossed_vwap or crossed_ema) and near_order_block and entry_trigger:
             entry_price = fvg_candle['high']
@@ -217,12 +229,17 @@ class FVGStrategy:
         fvg_candle = df.iloc[-2]
         entry_candle = df.iloc[-1]
 
+        # --- Diagnostic Logging ---
+        log_prefix = f"DEBUG_SHORT - {symbol} at {entry_candle.name}"
+
         # Condition 1: Is the second-to-last candle a Bearish FVG?
         is_fvg = fvg_candle['bearish_fvg']
+        logger.debug(f"{log_prefix} - Cond 1 (Is Bearish FVG): {is_fvg}")
 
         # Condition 2: Did the FVG candle cross VWAP or EMA200?
         crossed_vwap = fvg_candle['low'] < fvg_candle['vwap'] and fvg_candle['high'] > fvg_candle['vwap']
         crossed_ema = fvg_candle['low'] < fvg_candle['ema200'] and fvg_candle['high'] > fvg_candle['ema200']
+        logger.debug(f"{log_prefix} - Cond 2 (Crossed VWAP/EMA): {crossed_vwap or crossed_ema} (VWAP: {crossed_vwap}, EMA: {crossed_ema})")
 
         # Condition 3: Is the FVG near a bearish order block?
         order_block = self.order_blocks.get(symbol)
@@ -230,9 +247,11 @@ class FVGStrategy:
         if order_block and order_block['type'] == 'bearish':
             if max(fvg_candle['low'], order_block['bottom']) <= min(fvg_candle['high'], order_block['top']):
                 near_order_block = True
+        logger.debug(f"{log_prefix} - Cond 3 (Near Bearish OB): {near_order_block} (OB: {order_block})")
 
         # Condition 4: Is the entry candle's low below the FVG candle's low?
         entry_trigger = entry_candle['low'] < fvg_candle['low']
+        logger.debug(f"{log_prefix} - Cond 4 (Entry Trigger): {entry_trigger} (Entry Low: {entry_candle['low']}, FVG Low: {fvg_candle['low']})")
 
         if is_fvg and (crossed_vwap or crossed_ema) and near_order_block and entry_trigger:
             entry_price = fvg_candle['low']
@@ -364,7 +383,7 @@ if __name__ == "__main__":
     dotenv_path = os.path.join(os.path.dirname(__file__), '..', '.env')
     load_dotenv(dotenv_path=dotenv_path)
     import logging
-    logger.setLevel(logging.INFO)
+    logger.setLevel(logging.DEBUG)
 
     parser = argparse.ArgumentParser(description="FVG Strategy")
     parser.add_argument('--symbols', type=str, nargs='+', help='List of symbols to trade')
