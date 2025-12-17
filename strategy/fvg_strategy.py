@@ -119,20 +119,24 @@ class FVGStrategy:
                 df['ts'] = pd.to_datetime(df['ts'], unit='s')
                 df.set_index('ts', inplace=True)
 
+                # 1. Calculate indicators that may introduce NaNs
                 df['vwap'] = ta.vwap(df['high'], df['low'], df['close'], df['volume'])
                 df['ema200'] = ta.ema(df['close'], length=self.strat_var_ema_length)
+
+                # 2. Calculate positional patterns on the full, un-cleaned data
                 df['bullish_fvg'] = self.is_bullish_fvg(df)
                 df['bearish_fvg'] = self.is_bearish_fvg(df)
-
-                # Data Validation: Remove rows with NaN values from indicator calculations
-                df.dropna(inplace=True)
-                # Ensure there's enough data left for analysis
-                if len(df) < max(self.strat_var_swing_lookback, 3):
-                    continue
-
                 df = self._find_swing_points(df)
+
+                # Store the order block based on the full history before cleaning
                 self.order_blocks[symbol] = self._identify_order_block(df)
 
+                # 3. Clean data and check if enough remains for analysis
+                df.dropna(inplace=True)
+                if len(df) < 3: # Need at least fvg_candle and entry_candle
+                    continue
+
+                # 4. Check entry conditions on the cleaned data
                 self.check_long_entry_conditions(df, symbol)
                 self.check_short_entry_conditions(df, symbol)
 
