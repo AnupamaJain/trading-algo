@@ -32,13 +32,14 @@ class FVGStrategy:
         """Fetches all NSE F&O stock futures and MCX futures."""
         all_instruments = self.broker.get_instruments()
 
-        # 1. Create a whitelist of valid stock underlyings from the cash market segment
-        stock_symbols_df = all_instruments[all_instruments['segment'] == 'NSE']
+        # 1. Create a whitelist of valid stock underlyings from the cash market segment (NSE Exchange Code: 10)
+        stock_symbols_df = all_instruments[all_instruments['exchange'] == 10]
         stock_underlyings = set(stock_symbols_df['symbol'].str.replace('-EQ', ''))
 
         # 2. Filter for NSE futures contracts that are actual stock futures and have not expired
         futures_df = all_instruments[
-            (all_instruments['segment'] == 'NFO-FUT') &
+            (all_instruments['exchange'] == 10) & # NSE
+            (all_instruments['instrument_type'] == 'FUT') &
             (all_instruments['expiry'] >= pd.to_datetime('today').date()) &
             (all_instruments['underlying_symbol'].isin(stock_underlyings))
         ].copy()
@@ -48,9 +49,9 @@ class FVGStrategy:
         nearest_expiry_df = futures_df.loc[futures_df.groupby('underlying_symbol')['expiry'].idxmin()]
         stock_futures = nearest_expiry_df['symbol'].tolist()
 
-        # 3. Get all current-expiry MCX futures
+        # 3. Get all current-expiry MCX futures (MCX Exchange Code: 11)
         mcx_futures_df = all_instruments[
-            (all_instruments['exchange'] == 'MCX') &
+            (all_instruments['exchange'] == 11) & # MCX
             (all_instruments['instrument_type'] == 'FUT') &
             (all_instruments['expiry'] >= pd.to_datetime('today').date())
         ].copy()
