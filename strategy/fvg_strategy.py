@@ -32,10 +32,16 @@ class FVGStrategy:
         """Fetches all NSE F&O stock futures and precious metals."""
         all_instruments = self.broker.get_instruments()
 
-        # Filter for NSE futures contracts that have not expired
+        # 1. Create a whitelist of valid stock underlyings from the cash market segment
+        stock_symbols_df = all_instruments[all_instruments['segment'] == 'NSE']
+        # Extract the base symbol (e.g., 'SBIN' from 'SBIN-EQ')
+        stock_underlyings = set(stock_symbols_df['symbol'].str.replace('-EQ', ''))
+
+        # 2. Filter for NSE futures contracts that are actual stock futures and have not expired
         futures_df = all_instruments[
             (all_instruments['segment'] == 'NFO-FUT') &
-            (all_instruments['expiry'] >= pd.to_datetime('today').date())
+            (all_instruments['expiry'] >= pd.to_datetime('today').date()) &
+            (all_instruments['underlying_symbol'].isin(stock_underlyings)) # Ensure the underlying is a stock
         ].copy()
 
         # Find the nearest expiry for each underlying symbol
@@ -44,7 +50,7 @@ class FVGStrategy:
 
         stock_futures = nearest_expiry_df['symbol'].tolist()
 
-        # Add Gold and Silver futures
+        # 3. Add Gold and Silver futures separately
         precious_metals = ["GOLDM", "SILVERM"]
 
         metal_futures_df = all_instruments[
@@ -59,6 +65,7 @@ class FVGStrategy:
         else:
             metal_symbols = []
 
+        logger.info(f"Tracking {len(stock_futures)} stock futures and {len(metal_symbols)} metal futures.")
         return stock_futures + metal_symbols
 
 
@@ -212,7 +219,7 @@ class FVGStrategy:
 
         last_candle = df.iloc[-1]
         fvg_candle = df.iloc[-2] # Entry is on the candle *after* the FVG candle
-        
+
         # --- Bullish Entry ---
         if fvg_candle['bullish_fvg']:
             is_near_ob = self.is_fvg_near_order_block(df, fvg_candle.name, is_bullish=True)
