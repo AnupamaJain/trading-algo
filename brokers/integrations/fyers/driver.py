@@ -501,38 +501,20 @@ class FyersDriver(BrokerDriver):
 
     # --- Instruments ---
     def download_instruments(self) -> None:
-        self.master_contract_urls = [
-            "https://public.fyers.in/sym_details/NSE_FO.csv", 
-            "https://public.fyers.in/sym_details/BSE_FO.csv", 
-            "https://public.fyers.in/sym_details/NSE_CD.csv", 
-            "https://public.fyers.in/sym_details/NSE_COM.csv", 
-            "https://public.fyers.in/sym_details/NSE_CM.csv", 
-            "https://public.fyers.in/sym_details/BSE_CM.csv", 
-            "https://public.fyers.in/sym_details/MCX_COM.csv"
-            ]
-        self.master_contract_df = None
-        self.cache_file = ".cache/fyers_master_contract.csv"
-        
-        # Instrument type mapping
-        self.instrument_types = {
-            14: "INDEX",  # Index instruments
-            15: "STOCK"   # Stock instruments
-        }
-        response_text = ""
-        # Download the CSV file
-        for url in self.master_contract_urls:
-            response_temp = requests.get(url, timeout=30)
-            response_temp.raise_for_status()
-            response_text += response_temp.text
+        import io
 
-        # Save to file
-        if not os.path.exists(os.path.dirname(self.cache_file)):
-            os.makedirs(os.path.dirname(self.cache_file))
-            
-        with open(self.cache_file, 'w') as f:
-            f.write(response_text)
+        urls = {
+            "nse_fo": "https://public.fyers.in/sym_details/NSE_FO.csv",
+            "bse_fo": "https://public.fyers.in/sym_details/BSE_FO.csv",
+            "nse_cd": "https://public.fyers.in/sym_details/NSE_CD.csv",
+            "nse_com": "https://public.fyers.in/sym_details/NSE_COM.csv",
+            "nse_cm": "https://public.fyers.in/sym_details/NSE_CM.csv",
+            "bse_cm": "https://public.fyers.in/sym_details/BSE_CM.csv",
+            "mcx_com": "https://public.fyers.in/sym_details/MCX_COM.csv",
+        }
+
+        all_dfs = []
         
-        # Define column headers
         headers = [
             "Fytoken", "Symbol Details", "Exchange Instrument type", "Minimum lot size",
             "Tick size", "ISIN", "Trading Session", "Last update date", "Expiry date",
@@ -542,53 +524,61 @@ class FyersDriver(BrokerDriver):
         ]
         
         header_mapping = {
-            "Fytoken": "token",
-            "Symbol Details": "symbol_details",
-            "Exchange Instrument type": "instrument_type",
-            "Minimum lot size": "lot_size",
-            "Tick size": "tick_size",
-            "ISIN": "isin",
-            "Trading Session": "trading_session",
-            "Last update date": "last_update_date",
-            "Expiry date": "expiry",
-            "Symbol ticker": "symbol",
-            "Exchange": "exchange",
-            "Strike price": "strike",
-            "Segment": "segment",
-            "Scrip code": "scrip_code",
-            "Underlying symbol": "underlying_symbol"
+            "Fytoken": "token", "Symbol Details": "symbol_details",
+            "Exchange Instrument type": "instrument_type_id", "Minimum lot size": "lot_size",
+            "Tick size": "tick_size", "ISIN": "isin", "Trading Session": "trading_session",
+            "Last update date": "last_update_date", "Expiry date": "expiry",
+            "Symbol ticker": "symbol", "Exchange": "exchange", "Strike price": "strike",
+            "Segment": "segment_id", "Scrip code": "scrip_code", "Underlying symbol": "underlying_symbol"
         }
 
-        # Read as DataFrame with headers
-        df = pd.read_csv(self.cache_file, names=headers, header=None)
-        df = df[header_mapping.keys()]
+        for segment_name, url in urls.items():
+            try:
+                response = requests.get(url, timeout=30)
+                response.raise_for_status()
 
-        df.columns = header_mapping.values()
-        df['instrument_type'] = df['instrument_type'].map(self.instrument_types) # MAPPING TO STOCK/INDEX TODO - NOT USED MAYBE
-        df['instrument_type'] = df['symbol'].apply(lambda x: 'FUT' if x.endswith("FUT") else 'CE' if x.endswith("CE") else 'PE' if x.endswith("PE") else 'EQ')
-        df['expiry'] = pd.to_datetime(df['expiry'], unit='s', errors='coerce')
-        df['expiry'] = df['expiry'].apply(lambda x: pd.to_datetime(x).date() if not pd.isna(x) else np.nan)
-        df['days_to_expiry'] = df['expiry'].apply(lambda x: np.busday_count(datetime.now().date(), x) + 1 if not pd.isna(x) else np.nan)
-        # Updating Segment matching to match with what we have in the zerodha
-        def segment_mapping(x):
-            if x.endswith("FUT"):
-                if x.startswith("NSE"):
-                    return "NFO-FUT"
-                elif x.startswith("BSE"):
-                    return "BFO-FUT"
-            elif x.endswith("CE") or x.endswith("PE"):
-                if x.startswith("NSE"):
-                    return "NFO-OPT"
-                elif x.startswith("BSE"):
-                    return "BFO-OPT"
-            else:
-                if x.startswith("NSE"):
-                    return "NSE"
-                elif x.startswith("BSE"):
-                    return "BSE"
-        df['segment'] = df['symbol'].apply(segment_mapping)
-        df.to_csv(self.cache_file, index=False)
-        self.master_contract_df = df
+                # Use io.StringIO to read CSV data from text
+                csv_data = io.StringIO(response.text)
+
+                df = pd.read_csv(csv_data, names=headers, header=None)
+                df['source_segment'] = segment_name
+                all_dfs.append(df)
+            except requests.RequestException as e:
+                # Log the error but continue, so one failed download doesn't stop all.
+                print(f"Failed to download from {url}: {e}")
+
+        if not all_dfs:
+            self.master_contract_df = pd.DataFrame()
+            return
+
+        combined_df = pd.concat(all_dfs, ignore_index=True)
+
+        # --- Data Cleaning and Transformation ---
+        combined_df = combined_df[header_mapping.keys()].copy()
+        combined_df.columns = header_mapping.values()
+
+        # Derive instrument type from symbol ticker
+        combined_df['instrument_type'] = combined_df['symbol'].apply(
+            lambda x: 'FUT' if x.endswith("FUT") else
+                      'CE' if x.endswith("CE") else
+                      'PE' if x.endswith("PE") else 'EQ'
+        )
+
+        # Convert expiry from Unix timestamp to date object
+        combined_df['expiry'] = pd.to_datetime(combined_df['expiry'], unit='s', errors='coerce').dt.date
+
+        # Calculate days to expiry
+        combined_df['days_to_expiry'] = combined_df['expiry'].apply(
+            lambda x: np.busday_count(datetime.now().date(), x) + 1 if pd.notna(x) else np.nan
+        )
+
+        # Cache the processed file
+        self.cache_file = ".cache/fyers_master_contract_processed.csv"
+        if not os.path.exists(os.path.dirname(self.cache_file)):
+            os.makedirs(os.path.dirname(self.cache_file))
+        combined_df.to_csv(self.cache_file, index=False)
+
+        self.master_contract_df = combined_df
 
     def get_instruments(self) -> List[Instrument]:
         return self.master_contract_df
@@ -597,23 +587,21 @@ class FyersDriver(BrokerDriver):
         if self.master_contract_df is None:
             self.download_instruments()
 
-        # 1. Create a whitelist of stock symbols from the cash market segment
-        cash_market_df = self.master_contract_df[
-            (self.master_contract_df['exchange'] == 10) & # NSE
-            (self.master_contract_df['instrument_type'] == 'EQ')
-        ]
+        # 1. Filter for instruments from the NSE F&O segment only
+        # This prevents commodities and currencies from being included.
+        nse_fo_df = self.master_contract_df[self.master_contract_df['source_segment'] == 'nse_fo'].copy()
+
+        # 2. Create a whitelist of stock symbols from the cash market segment
+        cash_market_df = self.master_contract_df[self.master_contract_df['source_segment'] == 'nse_cm'].copy()
         # Fyers symbols in cash segment are like 'SBIN-EQ', we need the base 'SBIN'
-        stock_symbols_whitelist = set(cash_market_df['symbol'].str.replace('-EQ', ''))
+        stock_symbols_whitelist = set(cash_market_df['underlying_symbol'])
 
-        # 2. Filter for NSE futures contracts that have not expired
-        futures_df = self.master_contract_df[
-            (self.master_contract_df['exchange'] == 10) & # NSE
-            (self.master_contract_df['instrument_type'] == 'FUT') &
-            (self.master_contract_df['expiry'] >= pd.to_datetime('today').date())
+        # 3. Filter for futures contracts that have not expired and are for stocks
+        stock_futures_df = nse_fo_df[
+            (nse_fo_df['instrument_type'] == 'FUT') &
+            (nse_fo_df['expiry'] >= datetime.now().date()) &
+            (nse_fo_df['underlying_symbol'].isin(stock_symbols_whitelist))
         ].copy()
-
-        # 3. Filter futures whose underlying symbol is in our stock whitelist
-        stock_futures_df = futures_df[futures_df['underlying_symbol'].isin(stock_symbols_whitelist)]
 
         # 4. Find the nearest expiry for each underlying symbol
         stock_futures_df['expiry'] = pd.to_datetime(stock_futures_df['expiry'])
