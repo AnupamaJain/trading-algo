@@ -1,6 +1,4 @@
 default:
-  use_synthetic_oi: true
-  use_mock_price: true
   underlying: "NIFTY"
   index_symbol: "NSE:NIFTY 50"
   strike_difference: 50
