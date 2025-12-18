@@ -265,7 +265,7 @@ class FVGStrategy:
             quantity=quantity, product_type=ProductType.MARGIN, order_type=OrderType.LIMIT,
             price=target
         )
-        
+
         basket = [entry_order, sl_order, target_order]
 
         try:
@@ -319,47 +319,62 @@ class FVGStrategy:
 
 
     def display_table(self):
-        """Displays a live table of all positions."""
+        """Displays a live, formatted, and color-coded table of all positions."""
         os.system('cls' if os.name == 'nt' else 'clear')
         
-        table_data = []
-        for symbol, pos in self.positions.items():
-            quote = self.broker.get_quote(symbol)
-            
-            row = {
-                "stock_name": symbol.split(':')[1],
-                "type": pos['type'],
-                "status": pos['status'],
-                "future_price": quote.last_price if quote else 'N/A',
-                "entry_price": pos['entry_price'],
-                "target_price": pos['target'],
-                "stoploss_price": pos['stop_loss'],
-            }
-            table_data.append(row)
+        print("--- FVG Strategy ---")
 
-        if not table_data:
-            print("--- FVG Strategy ---")
+        if not self.positions:
             print("No active or attempted trades yet.")
             print("--------------------")
             return
 
-        df = pd.DataFrame(table_data)
+        # Define headers and column widths
+        headers = ["Stock Name", "Type", "Status", "Future Price", "Entry Price", "Target", "Stoploss"]
+        # Adjusted widths for better spacing
+        widths = [20, 8, 18, 15, 15, 15, 15]
         
-        def colorize_row(row):
-            status = row['status']
-            if status == 'CLOSED_SL' or status == 'FAILED':
-                return [colored(val, 'red') for val in row]
-            elif status == 'CLOSED_TARGET':
-                return [colored(val, 'green') for val in row]
-            elif status == 'OPEN':
-                return [colored(val, 'cyan') for val in row]
-            return [str(val) for val in row]
+        # --- Print Header ---
+        header_line = ""
+        separator_line = ""
+        for i, header in enumerate(headers):
+            header_line += f"{header:<{widths[i]}}"
+            separator_line += "-" * widths[i]
+        print(header_line)
+        print(separator_line)
 
-        df_display = df.apply(colorize_row, axis=1)
-        df_display.columns = df.columns
-        print(df_display.to_string())
+        # --- Print Rows ---
+        for symbol, pos in self.positions.items():
+            quote = self.broker.get_quote(symbol)
+            future_price = f"{quote.last_price:.2f}" if quote and quote.last_price else 'N/A'
 
-        print("-----------------------------------")
+            row_data = [
+                symbol.split(':')[1],
+                pos['type'],
+                pos['status'],
+                future_price,
+                f"{pos['entry_price']:.2f}",
+                f"{pos['target']:.2f}",
+                f"{pos['stop_loss']:.2f}",
+            ]
+
+            # Format the row string
+            row_str = ""
+            for i, item in enumerate(row_data):
+                row_str += f"{str(item):<{widths[i]}}"
+
+            # Determine color based on status
+            status_color = 'white' # Default
+            if pos['status'] in ['CLOSED_SL', 'FAILED']:
+                status_color = 'red'
+            elif pos['status'] == 'CLOSED_TARGET':
+                status_color = 'green'
+            elif pos['status'] == 'OPEN':
+                status_color = 'cyan'
+
+            print(colored(row_str, status_color))
+
+        print("-" * sum(widths))
 
 if __name__ == "__main__":
     from dotenv import load_dotenv
