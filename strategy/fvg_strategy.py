@@ -241,7 +241,8 @@ class FVGStrategy:
         self.positions[symbol] = {
             "order_id": None, "sl_order_id": None, "target_order_id": None,
             "entry_price": entry_price, "stop_loss": stop_loss, "target": target,
-            "status": "ATTEMPTING", "type": position_type
+            "status": "ATTEMPTING", "type": position_type,
+            "trigger_time": datetime.now()
         }
 
         # 1. Entry Order (Stop Limit)
@@ -330,9 +331,9 @@ class FVGStrategy:
             return
 
         # Define headers and column widths
-        headers = ["Stock Name", "Type", "Status", "Future Price", "Entry Price", "Target", "Stoploss"]
+        headers = ["Stock Name", "Type", "Status", "Future Price", "Entry Price", "Target", "Stoploss", "Trigger Time"]
         # Adjusted widths for better spacing
-        widths = [20, 8, 18, 15, 15, 15, 15]
+        widths = [20, 8, 18, 15, 15, 15, 15, 20]
         
         # --- Print Header ---
         header_line = ""
@@ -356,6 +357,7 @@ class FVGStrategy:
                 f"{pos['entry_price']:.2f}",
                 f"{pos['target']:.2f}",
                 f"{pos['stop_loss']:.2f}",
+                pos['trigger_time'].strftime("%Y-%m-%d %H:%M:%S")
             ]
 
             # Format the row string

@@ -369,8 +369,19 @@ class FyersDriver(BrokerDriver):
             order_book = self.get_orderbook()
             for order in order_book:
                 if order.get("id") == order_id:
-                    return order.get("status")
-            return "UNKNOWN"
+                    # Fyers uses numeric status codes
+                    status_code = order.get("status")
+                    # Mapping based on Fyers API documentation
+                    status_map = {
+                        1: "CANCELLED",
+                        2: "TRADED/FILLED",
+                        4: "TRANSIT",
+                        5: "REJECTED",
+                        6: "PENDING",
+                        7: "EXPIRED"
+                    }
+                    return status_map.get(status_code, "UNKNOWN")
+            return "NOT_FOUND"
         except Exception:
             return "UNKNOWN"
 
