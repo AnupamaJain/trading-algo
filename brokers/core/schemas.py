@@ -89,6 +89,7 @@ class Quote:
     bid: Optional[float] = None
     ask: Optional[float] = None
     volume: Optional[int] = None
+    open_interest: Optional[int] = None
     timestamp: Optional[datetime] = None
     raw: Optional[Dict[str, Any]] = None
 

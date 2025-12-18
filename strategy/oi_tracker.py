@@ -175,7 +175,9 @@ class OITrackerStrategy:
 
             # history is expected to be a list of records with 'oi' and 'ts'
             oi_data[strike] = {'history': history}
-            oi_data[strike]['current_oi'] = history[-1].get('oi') if isinstance(history[-1], dict) else None
+            # Get current OI from quote
+            quote = self.broker.get_quote(symbol)
+            oi_data[strike]['current_oi'] = quote.open_interest if quote else None
 
             # Calculate historical OI for different intervals
             for interval, minutes in self.strat_var_intervals.items():

@@ -401,10 +401,12 @@ class FyersDriver(BrokerDriver):
             resp = self._fyers_model.quotes({"symbols": full})
             payload = (resp or {}).get("d", [{}])[0].get("v", {})
             last_price = float(payload.get("lp", 0.0))
+            open_interest = int(payload.get("oi", 0))
         except Exception:
             last_price = 0.0
+            open_interest = 0
             resp = {"s": "error"}
-        return Quote(symbol=full.split(":", 1)[1].replace("-EQ", ""), exchange=exchange, last_price=last_price, raw=resp if isinstance(resp, dict) else None)
+        return Quote(symbol=full.split(":", 1)[1].replace("-EQ", ""), exchange=exchange, last_price=last_price, open_interest=open_interest, raw=resp if isinstance(resp, dict) else None)
 
     def get_quotes(self, symbols: List[str]) -> Dict[str, Quote]:  # type: ignore[override]
         if not self._fyers_model:
@@ -428,8 +430,9 @@ class FyersDriver(BrokerDriver):
                 sym = item.get("n")
                 payload = item.get("v", {})
                 last_price = float(payload.get("lp", 0.0))
+                open_interest = int(payload.get("oi", 0))
                 exch, tsym = sym.split(":", 1)
-                out[sym] = Quote(symbol=tsym.replace("-EQ", ""), exchange=Exchange[exch], last_price=last_price, raw=item)
+                out[sym] = Quote(symbol=tsym.replace("-EQ", ""), exchange=Exchange[exch], last_price=last_price, open_interest=open_interest, raw=item)
         except Exception:
             return out
         return out
