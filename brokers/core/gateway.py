@@ -95,6 +95,14 @@ class BrokerGateway:
     def get_order(self, order_id: str) -> Optional[Dict[str, Any]]:
         return self.driver.get_order(order_id)
 
+    def get_order_status(self, order_id: str) -> str:
+        """
+        Retrieves the status of a single order.
+
+        This method delegates the call to the underlying driver.
+        """
+        return self.driver.get_order_status(order_id)
+
     # --- Market data ---
     def get_quote(self, symbol: str) -> Quote:
         internal = symbol_registry.normalize(symbol)

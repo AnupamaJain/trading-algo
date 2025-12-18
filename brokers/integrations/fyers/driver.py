@@ -971,40 +971,57 @@ class FyersDriver(BrokerDriver):
     def place_basket_orders(self, requests: List[OrderRequest]) -> List[OrderResponse]:  # type: ignore[override]
         if not self._fyers_model:
             return [OrderResponse(status="error", order_id=None, message="unauthenticated")]
-        payloads: List[Dict[str, Any]] = []
+
+        payloads = []
         for r in requests:
-            payloads.append(
-                {
-                    "symbol": self._format_symbol(r.exchange, r.symbol),
-                    "qty": r.quantity,
-                    "type": M.order_type["fyers"][r.order_type],
-                    "side": M.transaction_type["fyers"][r.transaction_type],
-                    "productType": M.product_type["fyers"][r.product_type],
-                    "limitPrice": r.price or 0.0,
-                    "stopPrice": r.stop_price or 0.0,
-                    "validity": M.validity["fyers"][r.validity],
-                    "disclosedQty": 0,
-                    "offlineOrder": False,
-                }
-            )
+            payloads.append({
+                "symbol": self._format_symbol(r.exchange, r.symbol),
+                "qty": r.quantity,
+                "type": M.order_type["fyers"][r.order_type],
+                "side": M.transaction_type["fyers"][r.transaction_type],
+                "productType": M.product_type["fyers"][r.product_type],
+                "limitPrice": r.price or 0.0,
+                "stopPrice": r.stop_price or 0.0,
+                "validity": M.validity["fyers"][r.validity],
+                "disclosedQty": 0,
+                "offlineOrder": False,
+                # Fyers API expects stopLoss and takeProfit to be present
+                "stopLoss": 0.0,
+                "takeProfit": 0.0,
+            })
+
         try:
-            # If SDK supports basket
-            if hasattr(self._fyers_model, "place_basket_orders"):
-                resp = getattr(self._fyers_model, "place_basket_orders")(payloads)
-                if isinstance(resp, dict) and resp.get("s") == "ok":
-                    oid = str(resp.get("id") or resp.get("order_id"))
-                    return [OrderResponse(status="ok", order_id=oid, raw=resp) for _ in payloads]
-                return [OrderResponse(status="error", order_id=None, message=str(resp))]
-            # Fallback: individual placement
-            results: List[OrderResponse] = []
-            for p in payloads:
-                r = self._fyers_model.place_order(p)
-                if isinstance(r, dict) and r.get("s") == "ok":
-                    results.append(OrderResponse(status="ok", order_id=str(r.get("id") or r.get("order_id")), raw=r))
+            # Fyers v3 SDK does not expose multi-order, so we call the HTTP endpoint directly.
+            # Note: The official endpoint is /multi-order, not /basket_orders
+            if getattr(self, "_access_token", None) and getattr(self, "_client_id", None):
+                from ...net.http import post_json
+
+                url = "https://api-t1.fyers.in/api/v3/multi-order"
+                headers = {
+                    "Authorization": f"{self._client_id}:{self._access_token}",
+                    "Content-Type": "application/json",
+                }
+
+                # The API expects a dictionary with a "data" key holding the list of orders
+                response_data = post_json(url, headers=headers, json={"data": payloads})
+
+                if response_data and response_data.get("s") == "ok":
+                    # The response contains a list of order details under the 'data' key
+                    order_responses_data = response_data.get("data", [])
+                    results = []
+                    for order_resp in order_responses_data:
+                        order_id = order_resp.get("id")
+                        status = "ok" if order_id else "error"
+                        message = order_resp.get("message", "No message")
+                        results.append(OrderResponse(status=status, order_id=str(order_id) if order_id else None, message=message, raw=order_resp))
+                    return results
                 else:
-                    results.append(OrderResponse(status="error", order_id=None, message=str(r)))
-            return results
-        except Exception as e:  # noqa: BLE001
-            return [OrderResponse(status="error", order_id=None, message=str(e))]
+                    message = response_data.get("message", "Failed to place basket order.")
+                    return [OrderResponse(status="error", order_id=None, message=message, raw=response_data) for _ in requests]
+            else:
+                 return [OrderResponse(status="error", order_id=None, message="unauthenticated") for _ in requests]
+
+        except Exception as e:
+            return [OrderResponse(status="error", order_id=None, message=str(e)) for _ in requests]
 
 
