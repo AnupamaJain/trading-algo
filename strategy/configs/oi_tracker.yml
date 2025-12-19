@@ -1,5 +1,11 @@
 default:
-  index_symbol: "NSE:NIFTY 50"
+  index_symbol: "NSE:NIFTY50-INDEX"
+  underlying: "NIFTY"
+  # If true, use a generated mock NIFTY price when real data is unavailable.
+  # Set to false in production to force use of live/historical data only.
+  use_mock_price: false
+  # If true, generate synthetic option OI when broker OI/history is unavailable.
+  use_synthetic_oi: false
   strike_difference: 50
   alert_sound_path: "path/to/your/alert.mp3"
   intervals:
@@ -20,8 +26,8 @@ default:
     enabled: true
     # Defines the OI percentage change threshold that triggers a trade.
     # The trade is triggered for the *most recent interval* (e.g., '3m').
-    trade_threshold_percent: 20
+    trade_threshold_percent: 20 
     quantity: 75
-    product_type: "MARGIN" # MARGIN for normal, INTRADAY for intraday
+    product_type: "MARGIN" # NRML for normal, MIS for intraday
     order_type: "MARKET" # MARKET or LIMIT
     tag: "OI_TRACKER"
