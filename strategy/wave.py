@@ -1084,8 +1084,6 @@ PARAMETER GROUPS:
         
         parser.add_argument('--env-file', type=str, default='.env', help='Path to the .env file')
 
-        parser.add_argument('--force', action='store_true', help='Bypass interactive configuration prompt.')
-
         return parser
 
     def show_config(config):
@@ -1209,7 +1207,7 @@ PARAMETER GROUPS:
     # ==========================================================================
     
     # Validate that user has updated default configuration values
-    def validate_configuration(config, force=False):
+    def validate_configuration(config):
         """
         Validate that user has updated at least some default configuration values
         Returns True if config is valid, False otherwise
@@ -1295,9 +1293,6 @@ PARAMETER GROUPS:
             print("="*80)
             
             # Ask for user confirmation
-            if force:
-                print("\n--force flag detected. Bypassing interactive confirmation.")
-                return True
             while True:
                 response = input("\nDo you want to proceed with this configuration? (yes/no): ").lower().strip()
                 if response in ['yes', 'y']:
@@ -1320,7 +1315,7 @@ PARAMETER GROUPS:
         return True
     
     # Run configuration validation
-    if not validate_configuration(config, force=args.force):
+    if not validate_configuration(config):
         logger.error("Configuration validation failed. Please update your configuration.")
         sys.exit(1)
 
@@ -1427,7 +1422,7 @@ PARAMETER GROUPS:
     try:
         logger.info("--- Starting Main Monitoring Loop ---")
         while True:
-            time.sleep(60)
+            time.sleep(10)
             logger.info("Waking up for periodic check...")
             
             trading_system.print_current_status()
