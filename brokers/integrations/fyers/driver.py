@@ -69,6 +69,7 @@ class FyersDriver(BrokerDriver):
         # If no token, try login flows based on BROKER_LOGIN_MODE
         login_mode_env = (os.getenv("BROKER_LOGIN_MODE") or "auto").lower()
         if self._client_id and login_mode_env in ("totp", "auto"):
+        #if not self._access_token and self._client_id and login_mode_env in ("totp", "auto"):
             token = self._authenticate_via_totp()
             if token:
                 self._access_token = token
@@ -179,10 +180,37 @@ class FyersDriver(BrokerDriver):
             r5.raise_for_status()
             auth_data = r5.json()
             if auth_data.get("s") == "ok" and auth_data.get("access_token"):
-                return auth_data.get("access_token")
+                token = auth_data.get("access_token")
+                # Save token to .env file for persistence
+                self._save_token_to_env(token)
+                return token
             return None
         except Exception:
             return None
+
+    def _save_token_to_env(self, token: str) -> None:
+        """Save access token to .env file for persistence across runs."""
+        try:
+            import os
+            env_path = os.path.join(os.getcwd(), ".env")
+            
+            # Read existing .env content
+            existing_content = ""
+            if os.path.exists(env_path):
+                with open(env_path, "r") as f:
+                    existing_content = f.read()
+            
+            # Remove old BROKER_ACCESS_TOKEN if exists
+            lines = [line for line in existing_content.split("\n") if not line.startswith("BROKER_ACCESS_TOKEN=")]
+            
+            # Add new token
+            lines.append(f"BROKER_ACCESS_TOKEN='{token}'")
+            
+            # Write back
+            with open(env_path, "w") as f:
+                f.write("\n".join(lines))
+        except Exception:
+            pass  # Silent fail - token still works in memory
 
     # --- Helpers ---
     @staticmethod
@@ -350,18 +378,7 @@ class FyersDriver(BrokerDriver):
             return OrderResponse(status="ok", order_id=order_id, raw=resp if isinstance(resp, dict) else None)
         except Exception as e:  # noqa: BLE001
             return OrderResponse(status="error", order_id=order_id, message=str(e))
-
-    def get_orderbook(self) -> List[Dict[str, Any]]:
-        if not self._fyers_model:
-            return []
-        try:
-            resp = self._fyers_model.orderbook()
-            if isinstance(resp, dict):
-                return resp.get("orderBook", []) or resp.get("orderbook", []) or []
-            return []
-        except Exception:
-            return []
-
+        
     def get_order_status(self, order_id: str) -> str:
         if not self._fyers_model:
             return "UNKNOWN"
@@ -373,6 +390,17 @@ class FyersDriver(BrokerDriver):
             return "UNKNOWN"
         except Exception:
             return "UNKNOWN"
+
+    def get_orderbook(self) -> List[Dict[str, Any]]:
+        if not self._fyers_model:
+            return []
+        try:
+            resp = self._fyers_model.orderbook()
+            if isinstance(resp, dict):
+                return resp.get("orderBook", []) or resp.get("orderbook", []) or []
+            return []
+        except Exception:
+            return []
 
     def get_tradebook(self) -> List[Dict[str, Any]]:
         if not self._fyers_model:
@@ -576,6 +604,8 @@ class FyersDriver(BrokerDriver):
                     return "NFO-FUT"
                 elif x.startswith("BSE"):
                     return "BFO-FUT"
+                elif x.startswith("MCX"):
+                    return "MCX-FUT"
             elif x.endswith("CE") or x.endswith("PE"):
                 if x.startswith("NSE"):
                     return "NFO-OPT"
@@ -592,25 +622,36 @@ class FyersDriver(BrokerDriver):
 
     def get_instruments(self) -> List[Instrument]:
         return self.master_contract_df
-
+    
     def get_nse_futures_symbols(self) -> List[str]:
         if self.master_contract_df is None:
             self.download_instruments()
 
         # Filter for NSE futures contracts that have not expired
         futures_df = self.master_contract_df[
-            (self.master_contract_df['segment'] == 'NFO-FUT') &
-            (self.master_contract_df['expiry'] >= pd.to_datetime('today').date())
+            ((self.master_contract_df['segment'] == 'NFO-FUT') |
+            (self.master_contract_df['segment'] == 'MCX-FUT')) &
+            (pd.to_datetime(self.master_contract_df['expiry']) >= pd.to_datetime('today').normalize())
         ].copy()
 
+        '''futures_df = self.master_contract_df[
+            (self.master_contract_df['segment'] == 'MCX-FUT') &
+            (pd.to_datetime(self.master_contract_df['expiry']) >= pd.to_datetime('today').normalize())
+        ].copy()'''
+        
         # Find the nearest expiry for each underlying symbol
         futures_df['expiry'] = pd.to_datetime(futures_df['expiry'])
         nearest_expiry_df = futures_df.loc[futures_df.groupby('underlying_symbol')['expiry'].idxmin()]
 
         return nearest_expiry_df['symbol'].tolist()
-        futures_df = self.master_contract_df[self.master_contract_df['segment'] == 'NFO-FUT']
-        return futures_df['symbol'].tolist()
+        
+        # Sort by underlying and then expiry date
+        #futures_df.sort_values(by=['underlying_symbol', 'expiry'], inplace=True)
 
+        # Drop duplicates, keeping only the first (nearest expiry) for each underlying
+        #current_expiry_df = futures_df.drop_duplicates(subset='underlying_symbol', keep='first')
+        #return current_expiry_df['symbol'].tolist()
+    
     # --- Option chain ---
     def get_option_chain(self, underlying: str, exchange: str, **kwargs: Any) -> List[Dict[str, Any]]:
         if not self._fyers_model:
