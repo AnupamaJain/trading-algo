@@ -1,4 +1,7 @@
 import os
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import yaml
 from logger import logger
 from brokers import BrokerGateway, OrderRequest, Exchange, OrderType, TransactionType, ProductType
@@ -635,10 +638,12 @@ if __name__ == "__main__":
     import random
     import traceback
     import warnings
+
     from dotenv import load_dotenv
-    # Explicitly load .env from the project root
-    dotenv_path = os.path.join(os.path.dirname(__file__), '..', '.env')
-    load_dotenv(dotenv_path=dotenv_path)
+    load_dotenv()
+
+    warnings.filterwarnings("ignore")
+
     import logging
     logger.setLevel(logging.INFO)
     
@@ -646,9 +651,8 @@ if __name__ == "__main__":
     # SECTION 1: CONFIGURATION LOADING AND PARSING
     # ==========================================================================
     
-    # Construct an absolute path to the config file
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    config_file = os.path.join(project_root, "strategy", "configs", "survivor.yml")
+    # Load default configuration from YAML file
+    config_file = os.path.join(os.path.dirname(__file__), "configs/survivor.yml")
     with open(config_file, 'r') as f:
         config = yaml.safe_load(f)['default']
 
@@ -819,8 +823,6 @@ PARAMETER GROUPS:
         
         parser.add_argument('--env-file', type=str, default='.env', help='Path to the .env file')
 
-        parser.add_argument('--force', action='store_true', help='Bypass interactive configuration prompt.')
-
         return parser
 
     def show_config(config):
@@ -943,7 +945,7 @@ PARAMETER GROUPS:
     # ==========================================================================
     
     # Validate that user has updated default configuration values
-    def validate_configuration(config, force=False):
+    def validate_configuration(config):
         """
         Validate that user has updated at least some default configuration values
         Returns True if config is valid, False otherwise
@@ -1022,9 +1024,6 @@ PARAMETER GROUPS:
             print("="*80)
             
             # Ask for user confirmation
-            if force:
-                print("\n--force flag detected. Bypassing interactive confirmation.")
-                return True
             while True:
                 response = input("\nDo you want to proceed with this configuration? (yes/no): ").lower().strip()
                 if response in ['yes', 'y']:
@@ -1047,7 +1046,7 @@ PARAMETER GROUPS:
         return True
     
     # Run configuration validation
-    if not validate_configuration(config, force=args.force):
+    if not validate_configuration(config):
         logger.error("Configuration validation failed. Please update your configuration.")
         sys.exit(1)
 
