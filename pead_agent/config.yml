@@ -1,3 +1,6 @@
+broker:
+  driver: "fyers"  # Options: "fyers", "stub"
+
 execution:
   order_quantity: 1
   product_type: "INTRADAY" # Options: INTRADAY, CNC, MARGIN

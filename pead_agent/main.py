@@ -48,11 +48,21 @@ def main():
     args = parser.parse_args()
 
     # --- Setup Dependencies ---
-    # Initialize the Fyers driver for live trading
-    fyers_driver = FyersDriver()
+    broker_config = config.get("broker", {})
+    driver_name = broker_config.get("driver", "stub")
 
-    # Initialize the broker gateway with the Fyers driver
-    broker_gateway = BrokerGateway(driver=fyers_driver, broker_name="fyers")
+    if driver_name == "fyers":
+        driver = FyersDriver()
+        broker_name = "fyers"
+    else:
+        from brokers.stubs import StubBrokerDriver
+        driver = StubBrokerDriver()
+        broker_name = "stub"
+
+    print(f"[Main] Using '{driver_name}' broker driver.")
+
+    # Initialize the broker gateway
+    broker_gateway = BrokerGateway(driver=driver, broker_name=broker_name)
 
     # Initialize the execution manager
     execution_manager = ExecutionManager(broker_gateway=broker_gateway)
@@ -69,9 +79,12 @@ def main():
         config=config,
     )
 
-    # Run the analysis, which now includes the execution step
-    report = engine.run(args.symbol)
-    print(report)
+    # Run the analysis to get the raw data
+    analysis_data = engine.run_analysis(args.symbol)
+
+    # Format the data into a string report and print it
+    report_string = engine.format_report(analysis_data)
+    print(report_string)
 
 
 if __name__ == "__main__":

@@ -34,25 +34,23 @@ class DecisionEngine:
         self.execution_manager = execution_manager
         self.config = config
 
-    def run(self, stock_symbol: str) -> str:
+    def run_analysis(self, stock_symbol: str) -> dict:
         """
-        Runs the full analysis pipeline, executes trades, and returns a report.
+        Runs the full analysis pipeline, executes trades, and returns the raw data.
 
         Args:
             stock_symbol: The ticker symbol of the stock to analyze.
 
         Returns:
-            A formatted string containing the complete analysis report.
+            A dictionary containing the complete analysis report data.
         """
         # --- 1. Run all analyses ---
         pead_results = self.pead_analyzer.analyze(stock_symbol)
 
-        # PEAD is a mandatory filter
         if pead_results.get("PEAD Verdict") != "PASS":
             final_verdict = "REJECT"
             confidence = 0
             risks = "Stock did not pass the initial PEAD filter."
-            # Set default values for all analysis results to prevent NameError
             tech_results = {"Trend": "N/A", "Key Indicators": "N/A", "Support / Resistance": "N/A", "Technical Bias": "N/A"}
             fund_results = {"Growth Summary": "N/A", "Valuation Check": "N/A", "Fundamental Bias": "N/A"}
             news_results = {"Key Headlines": "N/A", "Sentiment Bias": "N/A"}
@@ -65,9 +63,8 @@ class DecisionEngine:
             gov_results = self.governance_analyzer.analyze(stock_symbol)
             flow_results = self.flow_analyzer.analyze(stock_symbol)
 
-            # --- 2. Apply Decision Logic ---
-            final_verdict = "HOLD"  # Default verdict
-            confidence = 50  # Neutral confidence
+            final_verdict = "HOLD"
+            confidence = 50
             risks_list = []
 
             if gov_results.get("Risk Level", "").lower() in ["medium", "high"]:
@@ -96,7 +93,6 @@ class DecisionEngine:
 
             risks = ", ".join(risks_list) if risks_list else "Standard market risks apply."
 
-        # --- 3. Assemble Final Decision for Execution ---
         final_decision = {
             "stock": stock_symbol,
             "verdict": final_verdict,
@@ -110,15 +106,13 @@ class DecisionEngine:
             "flow_results": flow_results,
         }
 
-        # --- 4. Call Execution Manager ---
         execution_config = self.config.get("execution", {})
         self.execution_manager.execute_trade(final_decision, execution_config)
 
-        # --- 5. Format and Return Report ---
-        return self._format_report(final_decision)
+        return final_decision
 
-    def _format_report(self, decision_data: dict) -> str:
-        """Formats the final analysis data into a string report."""
+    def format_report(self, decision_data: dict) -> str:
+        """Formats the final analysis data into a string report for the CLI."""
         report = f"""
 --------------------------------------------------
 STOCK: {decision_data['stock']}
