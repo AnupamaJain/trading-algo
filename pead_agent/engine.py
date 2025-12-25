@@ -1,3 +1,4 @@
+from pead_agent.execution import ExecutionManager
 from pead_agent.tools.base import (
     PEADAnalyzerBase,
     TechnicalAnalyzerBase,
@@ -7,9 +8,11 @@ from pead_agent.tools.base import (
     InstitutionalFlowAnalyzerBase,
 )
 
+
 class DecisionEngine:
     """
-    Orchestrates the multi-tool analysis pipeline and makes a final decision.
+    Orchestrates the multi-tool analysis pipeline, makes a final decision,
+    and forwards the decision for execution.
     """
     def __init__(
         self,
@@ -19,6 +22,8 @@ class DecisionEngine:
         news_analyzer: NewsSentimentAnalyzerBase,
         governance_analyzer: GovernanceAnalyzerBase,
         flow_analyzer: InstitutionalFlowAnalyzerBase,
+        execution_manager: ExecutionManager,
+        config: dict,
     ):
         self.pead_analyzer = pead_analyzer
         self.technical_analyzer = technical_analyzer
@@ -26,10 +31,12 @@ class DecisionEngine:
         self.news_analyzer = news_analyzer
         self.governance_analyzer = governance_analyzer
         self.flow_analyzer = flow_analyzer
+        self.execution_manager = execution_manager
+        self.config = config
 
-    def run_analysis(self, stock_symbol: str) -> str:
+    def run(self, stock_symbol: str) -> str:
         """
-        Runs the full analysis pipeline for a given stock symbol.
+        Runs the full analysis pipeline, executes trades, and returns a report.
 
         Args:
             stock_symbol: The ticker symbol of the stock to analyze.
@@ -45,7 +52,7 @@ class DecisionEngine:
             final_verdict = "REJECT"
             confidence = 0
             risks = "Stock did not pass the initial PEAD filter."
-            # Set default values for other results to avoid errors in formatting
+            # Set default values for all analysis results to prevent NameError
             tech_results = {"Trend": "N/A", "Key Indicators": "N/A", "Support / Resistance": "N/A", "Technical Bias": "N/A"}
             fund_results = {"Growth Summary": "N/A", "Valuation Check": "N/A", "Fundamental Bias": "N/A"}
             news_results = {"Key Headlines": "N/A", "Sentiment Bias": "N/A"}
@@ -59,17 +66,15 @@ class DecisionEngine:
             flow_results = self.flow_analyzer.analyze(stock_symbol)
 
             # --- 2. Apply Decision Logic ---
-            final_verdict = "HOLD"  # Default verdict if not rejected
+            final_verdict = "HOLD"  # Default verdict
             confidence = 50  # Neutral confidence
             risks_list = []
 
-            # Rule: HIGH governance risk -> IMMEDIATE REJECT
             if gov_results.get("Risk Level", "").lower() in ["medium", "high"]:
                 final_verdict = "REJECT"
                 confidence = 0
                 risks_list.append("Medium to High governance risk detected.")
 
-            # Rule: PEAD + Technical + Fundamentals MUST align for BUY
             is_pead_strong = pead_results.get("PEAD Verdict") == "PASS"
             is_tech_bullish = tech_results.get("Technical Bias", "").lower() == "bullish"
             is_fund_strong = fund_results.get("Fundamental Bias", "").lower() == "strong"
@@ -91,46 +96,68 @@ class DecisionEngine:
 
             risks = ", ".join(risks_list) if risks_list else "Standard market risks apply."
 
-        # --- 3. Format the Output ---
+        # --- 3. Assemble Final Decision for Execution ---
+        final_decision = {
+            "stock": stock_symbol,
+            "verdict": final_verdict,
+            "confidence": confidence,
+            "risks": risks,
+            "pead_results": pead_results,
+            "tech_results": tech_results,
+            "fund_results": fund_results,
+            "news_results": news_results,
+            "gov_results": gov_results,
+            "flow_results": flow_results,
+        }
+
+        # --- 4. Call Execution Manager ---
+        execution_config = self.config.get("execution", {})
+        self.execution_manager.execute_trade(final_decision, execution_config)
+
+        # --- 5. Format and Return Report ---
+        return self._format_report(final_decision)
+
+    def _format_report(self, decision_data: dict) -> str:
+        """Formats the final analysis data into a string report."""
         report = f"""
 --------------------------------------------------
-STOCK: {stock_symbol}
+STOCK: {decision_data['stock']}
 MARKET: NSE / BSE
 
 PEAD ANALYSIS:
-- PEAD Score: {pead_results.get('PEAD Score', 'N/A')}
-- Earnings Surprise: {pead_results.get('Earnings Surprise', 'N/A')}
-- Drift Direction: {pead_results.get('Drift Direction', 'N/A')}
-- PEAD Verdict: {pead_results.get('PEAD Verdict', 'N/A')}
+- PEAD Score: {decision_data['pead_results'].get('PEAD Score', 'N/A')}
+- Earnings Surprise: {decision_data['pead_results'].get('Earnings Surprise', 'N/A')}
+- Drift Direction: {decision_data['pead_results'].get('Drift Direction', 'N/A')}
+- PEAD Verdict: {decision_data['pead_results'].get('PEAD Verdict', 'N/A')}
 
 TECHNICAL ANALYSIS:
-- Trend: {tech_results.get('Trend', 'N/A')}
-- Key Indicators: {tech_results.get('Key Indicators', 'N/A')}
-- Support / Resistance: {tech_results.get('Support / Resistance', 'N/A')}
-- Technical Bias: {tech_results.get('Technical Bias', 'N/A')}
+- Trend: {decision_data['tech_results'].get('Trend', 'N/A')}
+- Key Indicators: {decision_data['tech_results'].get('Key Indicators', 'N/A')}
+- Support / Resistance: {decision_data['tech_results'].get('Support / Resistance', 'N/A')}
+- Technical Bias: {decision_data['tech_results'].get('Technical Bias', 'N/A')}
 
 FUNDAMENTAL ANALYSIS:
-- Growth Summary: {fund_results.get('Growth Summary', 'N/A')}
-- Valuation Check: {fund_results.get('Valuation Check', 'N/A')}
-- Fundamental Bias: {fund_results.get('Fundamental Bias', 'N/A')}
+- Growth Summary: {decision_data['fund_results'].get('Growth Summary', 'N/A')}
+- Valuation Check: {decision_data['fund_results'].get('Valuation Check', 'N/A')}
+- Fundamental Bias: {decision_data['fund_results'].get('Fundamental Bias', 'N/A')}
 
 NEWS & SENTIMENT:
-- Key Headlines: {news_results.get('Key Headlines', 'N/A')}
-- Sentiment Bias: {news_results.get('Sentiment Bias', 'N/A')}
+- Key Headlines: {decision_data['news_results'].get('Key Headlines', 'N/A')}
+- Sentiment Bias: {decision_data['news_results'].get('Sentiment Bias', 'N/A')}
 
 GOVERNANCE & FRAUD CHECK:
-- SEBI / Legal Issues: {gov_results.get('SEBI / Legal Issues', 'N/A')}
-- Risk Level: {gov_results.get('Risk Level', 'N/A')}
+- SEBI / Legal Issues: {decision_data['gov_results'].get('SEBI / Legal Issues', 'N/A')}
+- Risk Level: {decision_data['gov_results'].get('Risk Level', 'N/A')}
 
 INSTITUTIONAL FLOW:
-- FII/DII Activity: {flow_results.get('FII/DII Activity', 'N/A')}
-- Promoter Activity: {flow_results.get('Promoter Activity', 'N/A')}
+- FII/DII Activity: {decision_data['flow_results'].get('FII/DII Activity', 'N/A')}
+- Promoter Activity: {decision_data['flow_results'].get('Promoter Activity', 'N/A')}
 
 FINAL DECISION:
-- Verdict: {final_verdict}
-- Confidence Score: {confidence}
+- Verdict: {decision_data['verdict']}
+- Confidence Score: {decision_data['confidence']}
 - Time Horizon: Swing / Positional
-- Key Risks: {risks}
+- Key Risks: {decision_data['risks']}
 --------------------------------------------------
 """
         return report.strip()
