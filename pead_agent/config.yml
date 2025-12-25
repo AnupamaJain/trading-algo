@@ -1,0 +1,4 @@
+execution:
+  order_quantity: 1
+  product_type: "INTRADAY" # Options: INTRADAY, CNC, MARGIN
+  order_type: "MARKET"   # Options: MARKET, LIMIT
