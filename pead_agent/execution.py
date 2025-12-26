@@ -18,13 +18,14 @@ class ExecutionManager:
         """
         self.broker_gateway = broker_gateway
 
-    def execute_trade(self, decision: dict, config: dict):
+    def execute_trade(self, decision: dict, config: dict, trade_date=None):
         """
         Translates a decision into an order and places it via the BrokerGateway.
 
         Args:
             decision: A dictionary containing the final verdict and other details.
             config: A dictionary with execution-specific parameters.
+            trade_date: The date of the trade (used for backtesting, ignored here).
         """
         final_verdict = decision.get("verdict")
         stock_symbol = decision.get("stock")

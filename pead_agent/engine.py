@@ -1,3 +1,4 @@
+from datetime import date
 from pead_agent.execution import ExecutionManager
 from pead_agent.tools.base import (
     PEADAnalyzerBase,
@@ -34,18 +35,19 @@ class DecisionEngine:
         self.execution_manager = execution_manager
         self.config = config
 
-    def run_analysis(self, stock_symbol: str) -> dict:
+    def run_analysis(self, stock_symbol: str, analysis_date: date = None) -> dict:
         """
         Runs the full analysis pipeline, executes trades, and returns the raw data.
 
         Args:
             stock_symbol: The ticker symbol of the stock to analyze.
+            analysis_date: The date for which to perform the analysis (for backtesting).
 
         Returns:
             A dictionary containing the complete analysis report data.
         """
         # --- 1. Run all analyses ---
-        pead_results = self.pead_analyzer.analyze(stock_symbol)
+        pead_results = self.pead_analyzer.analyze(stock_symbol, analysis_date)
 
         if pead_results.get("PEAD Verdict") != "PASS":
             final_verdict = "REJECT"
@@ -57,11 +59,11 @@ class DecisionEngine:
             gov_results = {"SEBI / Legal Issues": "N/A", "Risk Level": "N/A"}
             flow_results = {"FII/DII Activity": "N/A", "Promoter Activity": "N/A"}
         else:
-            tech_results = self.technical_analyzer.analyze(stock_symbol)
-            fund_results = self.fundamental_analyzer.analyze(stock_symbol)
-            news_results = self.news_analyzer.analyze(stock_symbol)
-            gov_results = self.governance_analyzer.analyze(stock_symbol)
-            flow_results = self.flow_analyzer.analyze(stock_symbol)
+            tech_results = self.technical_analyzer.analyze(stock_symbol, analysis_date)
+            fund_results = self.fundamental_analyzer.analyze(stock_symbol, analysis_date)
+            news_results = self.news_analyzer.analyze(stock_symbol, analysis_date)
+            gov_results = self.governance_analyzer.analyze(stock_symbol, analysis_date)
+            flow_results = self.flow_analyzer.analyze(stock_symbol, analysis_date)
 
             final_verdict = "HOLD"
             confidence = 50
@@ -107,7 +109,13 @@ class DecisionEngine:
         }
 
         execution_config = self.config.get("execution", {})
-        self.execution_manager.execute_trade(final_decision, execution_config)
+        # The `trade_date` argument is ignored by the live ExecutionManager,
+        # but is required by the BacktestExecutionManager.
+        self.execution_manager.execute_trade(
+            final_decision,
+            execution_config,
+            trade_date=analysis_date
+        )
 
         return final_decision
 
